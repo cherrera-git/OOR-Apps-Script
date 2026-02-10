@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ==============================================================
+       RESET & BASE STYLES
+       ============================================================== */
+    * { box-sizing: border-box; }
+    
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8f9fa;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+      color: #3c4043;
+    }
+
+    .card {
+      background: white;
+      width: 100%;
+      max-width: 480px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(60,64,67,0.15);
+      overflow: hidden;
+    }
+
+    /* ==============================================================
+       HEADER
+       ============================================================== */
+    .card-header {
+      padding: 24px 24px 16px;
+      border-bottom: 1px solid #dadce0;
+    }
+    
+    .card-header h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 500;
+      color: #202124;
+    }
+    
+    .card-header p {
+      margin: 0;
+      font-size: 14px;
+      color: #5f6368;
+      line-height: 1.5;
+    }
+
+    /* ==============================================================
+       CONTENT AREA
+       ============================================================== */
+    .card-body {
+      padding: 24px;
+    }
+
+    /* File Input Styling */
+    .upload-container {
+      margin-bottom: 20px;
+    }
+
+    .file-input-wrapper {
+      position: relative;
+      display: block;
+    }
+
+    input[type="file"] {
+      display: none; 
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #fff;
+      border: 1px solid #dadce0;
+      color: #1a73e8;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .btn-secondary:hover {
+      background-color: #f8f9fa;
+      border-color: #d2e3fc;
+      color: #174ea6;
+    }
+
+    /* File List */
+    .file-list {
+      margin-top: 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      max-height: 150px;
+      overflow-y: auto;
+      background: #fafafa;
+      display: none; /* Hidden until files selected */
+    }
+    
+    .file-list.has-files {
+      display: block;
+    }
+
+    .file-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      border-bottom: 1px solid #f1f3f4;
+      font-size: 13px;
+    }
+    
+    .file-row:last-child {
+      border-bottom: none;
+    }
+
+    .file-name {
+      font-weight: 500;
+      color: #3c4043;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 70%;
+    }
+
+    .file-status {
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    /* Safety Section */
+    .safety-section {
+      background-color: #f8f9fa;
+      border: 1px solid #e8eaed;
+      border-radius: 4px;
+      padding: 16px;
+      margin-top: 24px;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .checkbox-group input {
+      margin-top: 3px;
+      width: 16px;
+      height: 16px;
+      accent-color: #1a73e8;
+      cursor: pointer;
+    }
+
+    .checkbox-group label {
+      font-size: 13px;
+      color: #3c4043;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .text-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .text-input:focus {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 1px #1a73e8;
+    }
+
+    .helper-text {
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    /* ==============================================================
+       FOOTER
+       ============================================================== */
+    .card-footer {
+      padding: 16px 24px;
+      background-color: #ffffff;
+      border-top: 1px solid #dadce0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: #5f6368;
+      font-weight: 500;
+    }
+
+    .btn-primary {
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      padding: 8px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background-color 0.2s;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: #1557b0;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.3);
+    }
+
+    .btn-primary:disabled {
+      background-color: #e8eaed;
+      color: #9aa0a6;
+      cursor: not-allowed;
+    }
+
+    /* Spinner */
+    .spinner {
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top: 2px solid #fff;
+      border-radius: 50%;
+      width: 14px;
+      height: 14px;
+      animation: spin 1s linear infinite;
+      display: none;
+    }
+    
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <!-- Header -->
+    <div class="card-header">
+      <h2>Import & Update</h2>
+      <p>Select SyteLine exports (.csv/.txt) to begin the update process. Filenames must match required sheet names.</p>
+    </div>
+
+    <!-- Body -->
+    <div class="card-body">
+      
+      <!-- Upload Zone -->
+      <div class="upload-container">
+        <label for="file-input" class="btn-secondary">
+          <span style="margin-right: 8px;">📂</span> Choose Files
+        </label>
+        <input type="file" id="file-input" multiple>
+        
+        <div id="file-list" class="file-list">
+          <!-- JS will populate this -->
+        </div>
+      </div>
+
+      <!-- Safety Gate -->
+      <div class="safety-section">
+        <div class="checkbox-group">
+          <input type="checkbox" id="ack">
+          <label for="ack">I confirm these files are fresh SyteLine exports.</label>
+        </div>
+
+        <div class="input-group">
+          <!-- Defined data-phrase for generic validation -->
+          <input id="phrase" class="text-input" type="text" data-phrase="IMPORT" placeholder="Type: IMPORT" autocomplete="off">
+          <div class="helper-text">Type <b id="phrase-target">IMPORT</b> to enable the button.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="card-footer">
+      <div id="status-message" class="status-text"></div>
+      
+      <button id="import-btn" class="btn-primary" disabled>
+        <span id="btn-text">Import & Update</span>
+        <div id="spinner" class="spinner"></div>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    //==============================================================
+    // DOM ELEMENTS
+    //==============================================================
+    const fileInput = document.getElementById('file-input');
+    const fileList = document.getElementById('file-list');
+    const importBtn = document.getElementById('import-btn');
+    const statusMessage = document.getElementById('status-message');
+    const btnText = document.getElementById('btn-text');
+    const spinner = document.getElementById('spinner');
+    const ack = document.getElementById('ack');
+    const phrase = document.getElementById('phrase');
+    const phraseTarget = document.getElementById('phrase-target');
+
+    let selectedFiles = [];
+    
+    // Config: Determine required phrase from HTML attribute
+    const REQUIRED_PHRASE = (phrase.getAttribute('data-phrase') || 'IMPORT').toUpperCase();
+    
+    // Init UI text to match config
+    phraseTarget.textContent = REQUIRED_PHRASE;
+    phrase.placeholder = `Type: ${REQUIRED_PHRASE}`;
+
+    //==============================================================
+    // EVENT LISTENERS
+    //==============================================================
+    fileInput.addEventListener('change', refreshState);
+    ack.addEventListener('change', refreshState);
+    phrase.addEventListener('input', refreshState);
+    
+    // GLOBAL ENTER KEY: Works on the whole document
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        if (!importBtn.disabled) {
+          event.preventDefault(); // Prevent accidental form submissions
+          importBtn.click();
+        }
+      }
+    });
+
+    importBtn.addEventListener('click', startSequentialImport);
+
+    //==============================================================
+    // UI LOGIC
+    //==============================================================
+    function refreshState() {
+      // Update file list if files changed
+      if (fileInput.files.length > 0) {
+        selectedFiles = Array.from(fileInput.files);
+        renderFiles();
+      }
+      
+      const filesOk = selectedFiles.length > 0;
+      const ackOk = ack.checked === true;
+      // Dynamic check against the configured phrase
+      const phraseOk = (phrase.value || '').trim().toUpperCase() === REQUIRED_PHRASE;
+
+      importBtn.disabled = !(filesOk && ackOk && phraseOk);
+
+      if (!filesOk) {
+        statusMessage.textContent = 'No files selected';
+        fileList.classList.remove('has-files');
+      } else {
+        statusMessage.textContent = `${selectedFiles.length} file(s) ready`;
+        fileList.classList.add('has-files');
+      }
+    }
+
+    function renderFiles() {
+      fileList.innerHTML = '';
+      selectedFiles.forEach((file, index) => {
+        const row = document.createElement('div');
+        row.className = 'file-row';
+        row.innerHTML = `
+          <div class="file-name">${file.name}</div>
+          <div id="status-${index}" class="file-status">Pending</div>
+        `;
+        fileList.appendChild(row);
+      });
+    }
+
+    function updateFileStatus(index, text, color) {
+      const el = document.getElementById(`status-${index}`);
+      if (el) {
+        el.textContent = text;
+        if (color) el.style.color = color;
+      }
+    }
+
+    //==============================================================
+    // IMPORT PROCESS (Sequential)
+    //==============================================================
+    async function startSequentialImport() {
+      if (selectedFiles.length === 0) return;
+
+      // Lock UI
+      importBtn.disabled = true;
+      fileInput.disabled = true;
+      ack.disabled = true;
+      phrase.disabled = true;
+      btnText.style.display = 'none';
+      spinner.style.display = 'block';
+      
+      const meta = { ack: ack.checked, phrase: phrase.value.trim() };
+      let errors = [];
+
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        statusMessage.textContent = `Processing ${i + 1} of ${selectedFiles.length}...`;
+        
+        updateFileStatus(i, 'Reading...', '#1a73e8'); // Blue
+
+        try {
+          // 1. Read File
+          const content = await readFileAsync(file);
+          
+          updateFileStatus(i, 'Uploading...', '#e37400'); // Orange
+          
+          // 2. Upload (Single file payload)
+          const payload = {};
+          payload[file.name] = content;
+          
+          await runServerImport(payload, meta);
+          
+          updateFileStatus(i, 'Done', '#1e8e3e'); // Green
+          
+        } catch (err) {
+          console.error(err);
+          updateFileStatus(i, 'Failed', '#d93025'); // Red
+          errors.push(`${file.name}: ${err.message || 'Unknown error'}`);
+        }
+      }
+
+      // Finalize
+      spinner.style.display = 'none';
+      btnText.style.display = 'inline';
+      
+      if (errors.length > 0) {
+        statusMessage.textContent = 'Completed with errors.';
+        statusMessage.style.color = '#d93025';
+        alert("Errors occurred during import:\n\n" + errors.join("\n"));
+        // Re-enable to allow retry or close
+        importBtn.disabled = false;
+        fileInput.disabled = false;
+        ack.disabled = false;
+        phrase.disabled = false;
+      } else {
+        statusMessage.textContent = 'Success! Starting Update...';
+        statusMessage.style.color = '#1e8e3e';
+        
+        // Trigger server-side update sequence (HTML Dialog flow)
+        google.script.run
+          .withFailureHandler((e) => alert("Error starting update: " + e.message))
+          .showUpdateConfirmation();
+
+        // REMOVED: setTimeout(() => google.script.host.close(), 750);
+        // Reason: Let the showUpdateConfirmation() call replace the dialog automatically.
+      }
+    }
+
+    //--------------------------------------------------------------
+    // Helpers
+    //--------------------------------------------------------------
+    function readFileAsync(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsText(file);
+      });
+    }
+
+    function runServerImport(fileData, meta) {
+      return new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .importCsvFiles(fileData, meta);
+      });
+    }
+
+    // Initialize
+    refreshState();
+  </script>
+
+</body>
+</html>
