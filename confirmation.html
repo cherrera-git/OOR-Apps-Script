@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* ==============================================================
+       SHARED STYLES (Matches dialog.html)
+       ============================================================== */
+    * { box-sizing: border-box; }
+    
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0; 
+      background-color: #f8f9fa;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      color: #3c4043;
+    }
+
+    .card {
+      background: white;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* HEADER */
+    .card-header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid #dadce0;
+    }
+    
+    .card-header h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      font-weight: 500;
+      color: #202124;
+    }
+    
+    .card-header p {
+      margin: 0;
+      font-size: 14px;
+      color: #5f6368;
+      line-height: 1.5;
+    }
+
+    /* BODY */
+    .card-body {
+      padding: 24px;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .text-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .text-input:focus {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 1px #1a73e8;
+    }
+
+    .helper-text {
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    /* FOOTER */
+    .card-footer {
+      padding: 16px 24px;
+      background-color: #ffffff;
+      border-top: 1px solid #dadce0;
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* BUTTONS */
+    button {
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .btn-secondary {
+      background-color: white;
+      border: 1px solid #dadce0;
+      color: #1a73e8;
+    }
+    .btn-secondary:hover {
+      background-color: #f1f3f4;
+      color: #174ea6;
+    }
+
+    .btn-primary {
+      background-color: #d93025; /* Red for confirmation/critical actions */
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-color: #a50e0e;
+      box-shadow: 0 1px 2px rgba(60,64,67,0.3);
+    }
+    .btn-primary:disabled {
+      background-color: #e8eaed;
+      color: #9aa0a6;
+      cursor: not-allowed;
+    }
+    
+    .btn-success {
+      background-color: #1e8e3e;
+      color: white;
+    }
+    .btn-success:hover {
+      background-color: #188038;
+    }
+
+    /* SPINNER */
+    .spinner {
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top: 2px solid #fff;
+      border-radius: 50%;
+      width: 14px;
+      height: 14px;
+      animation: spin 1s linear infinite;
+      display: none;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    /* Success View */
+    #successView { display: none; text-align: center; }
+    .success-icon { font-size: 48px; color: #1e8e3e; margin-bottom: 16px; }
+    .result-text { font-size: 14px; color: #3c4043; line-height: 1.6; text-align: left; background: #f8f9fa; padding: 12px; border-radius: 4px; border: 1px solid #e8eaed; }
+
+  </style>
+</head>
+<body>
+
+  <div class="card" id="mainCard">
+    <!-- INPUT VIEW -->
+    <div id="inputView">
+      <div class="card-header">
+        <h2><?= title ?></h2>
+        <p><?!= message ?></p>
+      </div>
+
+      <div class="card-body">
+        <div class="input-group">
+          <input type="text" id="phraseInput" class="text-input" placeholder="Type: <?= phrase ?>" autocomplete="off">
+          <div class="helper-text">Type <b><?= phrase ?></b> to enable the button.</div>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <button class="btn-secondary" onclick="google.script.host.close()">Cancel</button>
+        <button id="confirmBtn" class="btn-primary" disabled>
+          <span id="btnText">Confirm</span>
+          <div id="spinner" class="spinner"></div>
+        </button>
+      </div>
+    </div>
+
+    <!-- SUCCESS VIEW -->
+    <div id="successView">
+      <div class="card-body">
+        <div class="success-icon">✓</div>
+        <div class="result-text" id="resultContent">Processing complete.</div>
+      </div>
+      <div class="card-footer">
+        <button class="btn-success" onclick="google.script.host.close()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById('phraseInput');
+    const btn = document.getElementById('confirmBtn');
+    const btnText = document.getElementById('btnText');
+    const spinner = document.getElementById('spinner');
+    const inputView = document.getElementById('inputView');
+    const successView = document.getElementById('successView');
+    const resultContent = document.getElementById('resultContent');
+    
+    // Server-side variables injected via template
+    const REQUIRED = "<?= phrase ?>";
+    const ACTION = "<?= action ?>";
+
+    // Validation Logic
+    function validate() {
+      const val = input.value.trim().toUpperCase();
+      btn.disabled = (val !== REQUIRED);
+    }
+
+    input.addEventListener('input', validate);
+
+    // Global Enter Key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        // If on input view and button enabled
+        if (inputView.style.display !== 'none' && !btn.disabled) {
+          e.preventDefault();
+          runAction();
+        }
+        // If on success view, enter closes
+        if (successView.style.display === 'block') {
+          e.preventDefault();
+          google.script.host.close();
+        }
+      }
+    });
+
+    btn.addEventListener('click', runAction);
+
+    function runAction() {
+      // Lock UI
+      input.disabled = true;
+      btn.disabled = true;
+      btnText.style.display = 'none';
+      spinner.style.display = 'block';
+
+      // Call Server
+      google.script.run
+        .withSuccessHandler(showSuccess)
+        .withFailureHandler((err) => {
+           alert("Error: " + err.message);
+           google.script.host.close();
+        })
+        .processSafetyGate(ACTION);
+    }
+
+    function showSuccess(resultHtml) {
+      inputView.style.display = 'none';
+      successView.style.display = 'block';
+      resultContent.innerHTML = resultHtml || "Operation completed successfully.";
+    }
+
+    // Initial Focus
+    input.focus();
+  </script>
+</body>
+</html>
