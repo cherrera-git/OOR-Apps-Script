@@ -202,6 +202,12 @@ function writeToExternalLog_(logs, targetSheetName, parentCtx) {
 
     sheet.insertRowsAfter(1, values.length);
     const r = sheet.getRange(2, 1, values.length, values[0].length);
+    
+    // Protect key columns from auto-parsing as dates before setting values
+    sheet.getRange(2, 4, values.length, 1).setNumberFormat("@"); // Job Order
+    sheet.getRange(2, 6, values.length, 1).setNumberFormat("@"); // PO
+    sheet.getRange(2, 8, values.length, 1).setNumberFormat("@"); // Item No.
+    
     r.setValues(values);
     r.setWrap(true);
     r.setVerticalAlignment("top");
@@ -340,7 +346,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     // Rebuild notes (preserve manual)
     const endStr = srcEnd ? `End Date=${Utilities.formatDate(srcEnd, Session.getScriptTimeZone(), "M/dd/yy")}` : "";
     
-    // UPDATED: Handle array of shortages and join
+    // Handle array of shortages and join
     const shortageList = shortageData.get(dataKey) || [];
     // Sort array by Date ascending so P-dates are in order
     shortageList.sort((a, b) => {
@@ -350,7 +356,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     });
 
     const pStr = shortageList.map(s => 
-      `P-${Utilities.formatDate(s.date, Session.getScriptTimeZone(), "M/dd")} (${s.item})`
+      `P-${Utilities.formatDate(s.date, Session.getScriptTimeZone(), "M/dd")} (${normalizeString_(s.item)})`
     ).join("; ");
 
     const cspStr = cspData.get(dataKey) || "";
@@ -673,7 +679,6 @@ function loadShortageData_(sheet, parentCtx) {
     const key = normalizeJobKey_(r[h["Job Order"]]);
     const date = parseDate_(r[h["PO Due Date"]]);
     if (key && date) {
-      // UPDATED: Store array of shortages instead of single last value
       if (!map.has(key)) map.set(key, []);
       map.get(key).push({ date, item: r[h["Item"]] });
     }
@@ -773,8 +778,16 @@ function writeShortageList_(ss, results, parentCtx) {
   }
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
 
   if (results.length > 0) {
+    // CRITICAL: Format ID columns as Text BEFORE writing values to prevent 
+    // Google Sheets from auto-parsing strings like "1825-01" as dates
+    sheet.getRange(2, 2, results.length, 1).setNumberFormat("@"); // Job Order
+    sheet.getRange(2, 4, results.length, 1).setNumberFormat("@"); // Cust PO
+    sheet.getRange(2, 6, results.length, 1).setNumberFormat("@"); // Item
+    sheet.getRange(2, 10, results.length, 1).setNumberFormat("@"); // PO
+
     const out = results.map(r => [
       r.assignedTo,
       r.jobOrder,
@@ -832,12 +845,20 @@ function parseAndWriteCsvToSheet_(sheet, content, parentCtx) {
   data = trimmed.map(r => r.concat(Array(Math.max(0, maxLen - r.length)).fill("")));
 
   sheet.clearContents();
-  sheet.getRange(1, 1, data.length, maxLen).setValues(data);
 
-  const h = getHeaders_(sheet);
-  if (h["Item"] !== undefined) {
-    sheet.getRange(2, h["Item"] + 1, Math.max(0, data.length - 1), 1).setNumberFormat("@");
+  // CRITICAL: Format ID columns as Text BEFORE writing values
+  if (data.length > 0) {
+    const textColumns = ["item", "item no.", "item no", "item number", "job", "job order", "po", "cust po"];
+    const headerRow = data[0].map(c => normalizeString_(c).toLowerCase());
+    
+    headerRow.forEach((colName, idx) => {
+      if (textColumns.includes(colName)) {
+        sheet.getRange(2, idx + 1, Math.max(1, data.length - 1), 1).setNumberFormat("@");
+      }
+    });
   }
+
+  sheet.getRange(1, 1, data.length, maxLen).setValues(data);
 
   logInfo_(ctx, "DONE", { sheet: sheet.getName(), rows: data.length, cols: maxLen, delimiter });
 }
