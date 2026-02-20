@@ -906,11 +906,34 @@ function getActualLastRow_(sheet, col) {
 }
 
 function processMoveOperation_(src, tar, rows, desc) {
-  const sorted = rows.slice().sort((a, b) => b - a);
-  let next = tar.getLastRow() + 1;
+  if (!rows || !rows.length) return;
 
-  sorted.forEach(r => {
-    src.getRange(r, 1, 1, src.getLastColumn()).copyTo(tar.getRange(next++, 1), { contentsOnly: false });
+  // Group contiguous rows into blocks to minimize API copy operations.
+  const sorted = rows.slice().sort((a, b) => a - b);
+  let nextRow = tar.getLastRow() + 1;
+  const lastCol = src.getLastColumn();
+
+  const ranges = [];
+  let start = sorted[0], prev = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const r = sorted[i];
+    if (r === prev + 1) { 
+      prev = r; 
+      continue; 
+    }
+    ranges.push([start, prev]);
+    start = prev = r;
+  }
+  ranges.push([start, prev]);
+
+  // Execute copy blocks
+  ranges.forEach(([s, e]) => {
+    const numRows = e - s + 1;
+    const sourceRange = src.getRange(s, 1, numRows, lastCol);
+    const targetRange = tar.getRange(nextRow, 1);
+    sourceRange.copyTo(targetRange, { contentsOnly: false });
+    nextRow += numRows;
   });
 
   batchDeleteRows_(src, sorted);
