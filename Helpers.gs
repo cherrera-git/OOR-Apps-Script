@@ -292,10 +292,14 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
 
   const hasPcCol = (h["Project Coordinator"] !== undefined);
   const pcCol = hasPcCol ? (h["Project Coordinator"] + 1) : null;
+  
+  // Locate PC Notes Column (Defaults to 21/U if header not found)
+  const pcNotesCol = (h["PC Notes"] !== undefined) ? (h["PC Notes"] + 1) : 21;
 
   const dueUpdates = new Map();
   const noteUpdates = new Map();
   const pcUpdates = new Map();
+  const pcNotesUpdates = new Map(); // Store our concise changelogs
 
   let matchCount = 0;
   let unmatchedCount = 0;
@@ -410,11 +414,11 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       if (dueChanged) lines.push(`Due date: ${oldDueStr || "blank"} → ${srcDueStr || "blank"}`);
       if (pcChanged) lines.push(`Project Coordinator: blank → ${srcAssignedTo}`);
 
+      const deltas = [];
       if (notesChanged) {
         const oldParts = parseNotesParts_(oldNote);
         const newParts = parseNotesParts_(newNote);
 
-        const deltas = [];
         if (oldParts.endDate !== newParts.endDate) deltas.push(`End Date ${oldParts.endDate || "blank"} → ${newParts.endDate || "blank"}`);
 
         const oldP = oldParts.pFull || "none";
@@ -442,6 +446,42 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         runId,
         changes: lines
       });
+
+      // --- INLINE CHANGELOG FOR PC NOTES (COLUMN U) ---
+      const rowChangelogs = [];
+      
+      if (dueChanged) {
+        // Strip out the year for Due Dates
+        const oldD = oldDue ? Utilities.formatDate(oldDue, Session.getScriptTimeZone(), "M/dd") : "Blank";
+        const newD = srcDue ? Utilities.formatDate(srcDue, Session.getScriptTimeZone(), "M/dd") : "Cleared";
+        rowChangelogs.push(`* Due date: ${oldD} → ${newD}`);
+      }
+      
+      if (pcChanged) {
+        rowChangelogs.push(`* PC: ${oldPc || "Blank"} → ${srcAssignedTo || "Cleared"}`);
+      }
+      
+      if (notesChanged && deltas.length) {
+        // Automatically strip out the year from any End Date deltas to save space (e.g. 4/24/2026 -> 4/24)
+        const shortDeltas = deltas.map(d => d.replace(/\/\d{2,4}(?=\s|→|$)/g, ''));
+        rowChangelogs.push(`* Notes: ${shortDeltas.join(" | ")}`);
+      }
+
+      if (rowChangelogs.length > 0) {
+        // Fetch existing PC notes for this row
+        const currentPCNotes = normalizeString_(disp[i][pcNotesCol - 1]);
+        
+        let pcLines = currentPCNotes ? currentPCNotes.split('\n') : [];
+        
+        // Filter out any older changelogs (lines starting with "*")
+        pcLines = pcLines.filter(line => !line.trim().startsWith('*'));
+        
+        // Append the new, concise changelogs to the bottom
+        pcLines.push(...rowChangelogs);
+        
+        // Queue the update to be written to the sheet
+        pcNotesUpdates.set(rowNum, pcLines.join('\n'));
+      }
     }
   }
 
@@ -449,6 +489,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
   const dueWritten = applyColumnUpdates_(sheet, dueCol, dueUpdates);
   const noteWritten = applyColumnUpdates_(sheet, noteCol, noteUpdates);
   const pcWritten = (hasPcCol ? applyColumnUpdates_(sheet, pcCol, pcUpdates) : 0);
+  const pcNotesWritten = applyColumnUpdates_(sheet, pcNotesCol, pcNotesUpdates); // Writes PC notes efficiently
 
   if (summary) {
     summary.dueDateChanges += dueWritten;
@@ -470,6 +511,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     dueWritten,
     noteWritten,
     pcWritten,
+    pcNotesWritten,
     unmatched: unmatchedCount,
     logs: logs.length
   });
