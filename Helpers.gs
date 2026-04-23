@@ -419,13 +419,67 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         const oldParts = parseNotesParts_(oldNote);
         const newParts = parseNotesParts_(newNote);
 
-        if (oldParts.endDate !== newParts.endDate) deltas.push(`End Date ${oldParts.endDate || "blank"} → ${newParts.endDate || "blank"}`);
+        if (oldParts.endDate !== newParts.endDate) {
+          // Plain English: automatically strip year to save space
+          const shortOld = oldParts.endDate ? oldParts.endDate.replace(/\/\d{2,4}$/, '') : "Blank";
+          const shortNew = newParts.endDate ? newParts.endDate.replace(/\/\d{2,4}$/, '') : "Cleared";
+          deltas.push(`End Date: ${shortOld} → ${shortNew}`);
+        }
 
-        const oldP = oldParts.pFull || "none";
-        const newP = newParts.pFull || "none";
-        if (oldP !== newP) deltas.push(`Shortage ${oldP} → ${newP}`);
+        // Compare shortage arrays to find what arrived, shifted, or is newly short
+        const oldPArr = oldParts.pFull ? oldParts.pFull.split(';').map(s => s.trim()).filter(Boolean) : [];
+        const newPArr = newParts.pFull ? newParts.pFull.split(';').map(s => s.trim()).filter(Boolean) : [];
+        
+        const added = newPArr.filter(x => !oldPArr.includes(x));
+        const removed = oldPArr.filter(x => !newPArr.includes(x));
+        
+        if (added.length > 0 || removed.length > 0) {
+          const getBaseItem = (str) => { const m = str.match(/\((.*)\)/); return m ? m[1].trim() : str; };
+          const getDate = (str) => { const m = str.match(/(P-\d{1,2}\/\d{1,2})/i); return m ? m[1].trim() : ""; };
 
-        if (oldParts.csp !== newParts.csp) deltas.push(`CSP ${oldParts.csp || "blank"} → ${newParts.csp || "blank"}`);
+          const arrived = [];
+          const newShort = [];
+          const shifted = [];
+
+          const removedItems = new Map();
+          removed.forEach(r => removedItems.set(getBaseItem(r), r));
+
+          const addedItems = new Map();
+          added.forEach(a => addedItems.set(getBaseItem(a), a));
+
+          removed.forEach(r => {
+            const item = getBaseItem(r);
+            if (!addedItems.has(item)) arrived.push(item);
+          });
+
+          added.forEach(a => {
+            const item = getBaseItem(a);
+            if (removedItems.has(item)) {
+              const oldDate = getDate(removedItems.get(item)).replace('P-', '');
+              const newDate = getDate(a).replace('P-', '');
+              shifted.push(`${item} (${oldDate}→${newDate})`);
+            } else {
+              newShort.push(a);
+            }
+          });
+
+          const pDiffs = [];
+          if (arrived.length) pDiffs.push(`Arrived: ${arrived.join(', ')}`);
+          if (newShort.length) pDiffs.push(`New Short: ${newShort.join(', ')}`);
+          if (shifted.length) pDiffs.push(`Shifted: ${shifted.join(', ')}`);
+
+          deltas.push(pDiffs.join(' | '));
+        }
+
+        if (oldParts.csp !== newParts.csp) {
+          let cspMsg = `CSP: ${oldParts.csp || "Blank"} → ${newParts.csp || "Cleared"}`;
+          const n = (newParts.csp || "").toLowerCase();
+          if (n.includes("not received")) cspMsg = "Waiting on CSP";
+          else if (n.includes("partially")) cspMsg = "Partial CSP Arrived";
+          else if (n.includes("received")) cspMsg = "CSP Arrived";
+          deltas.push(cspMsg);
+        }
+
         if (oldParts.custom !== newParts.custom) deltas.push(`Manual notes changed`);
 
         lines.push(deltas.length ? `Notes updated: ${deltas.join(" | ")}` : "Notes updated");
@@ -462,9 +516,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       }
       
       if (notesChanged && deltas.length) {
-        // Automatically strip out the year from any End Date deltas to save space (e.g. 4/24/2026 -> 4/24)
-        const shortDeltas = deltas.map(d => d.replace(/\/\d{2,4}(?=\s|→|$)/g, ''));
-        rowChangelogs.push(`* Notes: ${shortDeltas.join(" | ")}`);
+        rowChangelogs.push(`* Notes: ${deltas.join(" | ")}`);
       }
 
       if (rowChangelogs.length > 0) {
@@ -511,7 +563,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     dueWritten,
     noteWritten,
     pcWritten,
-    pcNotesWritten,
+    pcNotesWritten, // Added to log
     unmatched: unmatchedCount,
     logs: logs.length
   });
