@@ -292,7 +292,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
 
   const hasPcCol = (h["Project Coordinator"] !== undefined);
   const pcCol = hasPcCol ? (h["Project Coordinator"] + 1) : null;
-  
+
   // Locate PC Notes Column (Defaults to 21/U if header not found)
   const pcNotesCol = (h["PC Notes"] !== undefined) ? (h["PC Notes"] + 1) : 21;
 
