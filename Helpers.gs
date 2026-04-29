@@ -97,8 +97,8 @@ function parseNotesParts_(noteStr) {
   const endMatch = note.match(/End Date=([^;]+)/i);
   const endDate = endMatch ? normalizeString_(endMatch[1]) : "";
 
-  // UPDATED: Capture ALL P-entries (concatenated)
-  const pMatches = note.match(/P-[0-9]{1,2}\/[0-9]{1,2}[^;]*/gi) || [];
+  // UPDATED: Capture ALL P-entries (concatenated), including TBD (No PO dates)
+  const pMatches = note.match(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*/gi) || [];
   const pFull = pMatches.map(s => s.trim()).join("; ");
 
   const cspMatch = note.match(/CSP[^;]*/i);
@@ -106,7 +106,7 @@ function parseNotesParts_(noteStr) {
 
   const custom = note
     .replace(/End Date=[^;]+;?/gi, "")
-    .replace(/P-[^;]+;?/gi, "") // Strips all P- entries
+    .replace(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*;?/gi, "") // Strips all P- entries including TBD
     .replace(/CSP[^;]*;?/gi, "")
     .split(";")
     .map(s => s.trim())
@@ -352,23 +352,25 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     
     // Handle array of shortages and join
     const shortageList = shortageData.get(dataKey) || [];
-    // Sort array by Date ascending so P-dates are in order
+    // Sort array by Date ascending so P-dates are in order. Nulls (TBD) go to the end.
     shortageList.sort((a, b) => {
-        const dA = parseDate_(a.date) || 0;
-        const dB = parseDate_(b.date) || 0;
+        const dA = parseDate_(a.date) ? parseDate_(a.date).getTime() : Infinity;
+        const dB = parseDate_(b.date) ? parseDate_(b.date).getTime() : Infinity;
         return dA - dB;
     });
 
-    const pStr = shortageList.map(s => 
-      `P-${Utilities.formatDate(s.date, Session.getScriptTimeZone(), "M/dd")} (${normalizeString_(s.item)})`
-    ).join("; ");
+    const pStr = shortageList.map(s => {
+      const d = parseDate_(s.date);
+      const dStr = d ? Utilities.formatDate(d, Session.getScriptTimeZone(), "M/dd") : "TBD";
+      return `P-${dStr} (${normalizeString_(s.item)})`;
+    }).join("; ");
 
     const cspStr = cspData.get(dataKey) || "";
 
     const cleanCustom = oldNote
-      .replace(/End Date=[^;]+/g, "")
-      .replace(/P-[^;]*/g, "")
-      .replace(/CSP[^;]*/g, "")
+      .replace(/End Date=[^;]+/gi, "")
+      .replace(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*/gi, "")
+      .replace(/CSP[^;]*/gi, "")
       .split(";")
       .map(s => s.trim())
       .filter(Boolean);
@@ -435,7 +437,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         
         if (added.length > 0 || removed.length > 0) {
           const getBaseItem = (str) => { const m = str.match(/\((.*)\)/); return m ? m[1].trim() : str; };
-          const getDate = (str) => { const m = str.match(/(P-\d{1,2}\/\d{1,2})/i); return m ? m[1].trim() : ""; };
+          const getDate = (str) => { const m = str.match(/(P-(?:\d{1,2}\/\d{1,2}|TBD))/i); return m ? m[1].trim() : ""; };
 
           const arrived = [];
           const newShort = [];
@@ -516,7 +518,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       }
       
       if (notesChanged && deltas.length) {
-        rowChangelogs.push(`* Notes: ${deltas.join(" | ")}`);
+        rowChangelogs.push(`* ${deltas.join(" | ")}`);
       }
 
       if (rowChangelogs.length > 0) {
@@ -772,9 +774,12 @@ function loadShortageData_(sheet, parentCtx) {
   values.forEach(r => {
     const key = normalizeJobKey_(r[h["Job Order"]]);
     const date = parseDate_(r[h["PO Due Date"]]);
-    if (key && date) {
+    const item = normalizeString_(r[h["Item"]]); 
+    
+    // FIX: Include shortages even if they don't have a PO due date yet (TBD)
+    if (key && item) {
       if (!map.has(key)) map.set(key, []);
-      map.get(key).push({ date, item: r[h["Item"]] });
+      map.get(key).push({ date, item });
     }
   });
 
