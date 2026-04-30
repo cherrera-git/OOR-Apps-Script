@@ -69,8 +69,13 @@ function normalizeNotes_(s) {
 }
 
 function parseDate_(v) {
+  // Catch null, undefined, and empty strings immediately
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   if (typeof v === "number") return new Date(Math.round((v - 25569) * 864e5));
+  
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
