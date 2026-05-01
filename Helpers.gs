@@ -535,6 +535,9 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         // Filter out any older changelogs (lines starting with "*")
         pcLines = pcLines.filter(line => !line.trim().startsWith('*'));
         
+        // Add a blank line to leave space for New Manual notes
+        pcLines.push('');
+        
         // Append the new, concise changelogs to the bottom
         pcLines.push(...rowChangelogs);
         
