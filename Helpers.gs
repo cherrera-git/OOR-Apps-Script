@@ -464,7 +464,12 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
             if (removedItems.has(item)) {
               const oldDate = getDate(removedItems.get(item)).replace('P-', '');
               const newDate = getDate(a).replace('P-', '');
-              shifted.push(`${item} (${oldDate}→${newDate})`);
+              
+              if (!oldDate) {
+                newShort.push(a);
+              } else {
+                shifted.push(`${item} (${oldDate}→${newDate})`);
+              }
             } else {
               newShort.push(a);
             }
@@ -486,8 +491,6 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
           else if (n.includes("received")) cspMsg = "CSP Arrived";
           deltas.push(cspMsg);
         }
-
-        if (oldParts.custom !== newParts.custom) deltas.push(`Manual notes changed`);
 
         lines.push(deltas.length ? `Notes updated: ${deltas.join(" | ")}` : "Notes updated");
       }
