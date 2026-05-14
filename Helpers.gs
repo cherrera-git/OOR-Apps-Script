@@ -56,6 +56,18 @@ function normalizeString_(s) {
   return String(s === null || s === undefined ? "" : s).trim();
 }
 
+/**
+ * Robust number parsing that handles thousands separators (commas).
+ * Example: "50,000.00" -> 50000
+ */
+function parseNumber_(v) {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return v;
+  const clean = String(v).replace(/,/g, "");
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
+}
+
 function normalizeJobKey_(s) {
   return normalizeString_(s).replace(/\u00A0/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -739,7 +751,7 @@ function loadJobMaterialDemands_(sheet, splitSet, pClassMap, producedSet, custPo
       jobOrder: key,
       productClass: pClassMap.get(key) || "",
       custPo: (custPoMap && custPoMap.get) ? (custPoMap.get(key) || "") : "",
-      qtyShort: parseFloat(row[h["Qty Short"]] || 0),
+      qtyShort: parseNumber_(row[h["Qty Short"]] || 0),
       um: row[h["U/M"]],
       assignedTo: row[h["Assigned To"]],
       jobEndDate: parseDate_(row[h["End Date"]]) || ""
@@ -761,7 +773,7 @@ function loadPoSupplies_(sheet, parentCtx) {
     if (!item) return;
 
     if (!map.has(item)) map.set(item, []);
-    const qty = parseFloat(r[h["Ordered"]] || 0) - parseFloat(r[h["Received"]] || 0);
+    const qty = parseNumber_(r[h["Ordered"]] || 0) - parseNumber_(r[h["Received"]] || 0);
 
     if (qty > 0) {
       map.get(item).push({
@@ -813,7 +825,7 @@ function loadCustomerPartData_(sheet, splitSet, parentCtx) {
     const key = normalizeJobKey_(getCompositeJobKey_(job, suf, splitSet.has(job)));
     if (!key) return;
 
-    const pct = parseFloat(r[h["Percent Complete"]] || 0);
+    const pct = parseNumber_(r[h["Percent Complete"]] || 0);
     map.set(key, pct === 100 ? "CSP received" : (pct > 0 ? "CSP partially received" : "CSP not received"));
   });
 
@@ -836,7 +848,7 @@ function allocateMaterials_(demandsList, suppliesMap, parentCtx) {
     const supplies = suppliesRaw.map(s => ({
       po: s.po,
       dueDate: (s.dueDate instanceof Date) ? new Date(s.dueDate.getTime()) : (parseDate_(s.dueDate) || ""),
-      qtyOrdered: Number(s.qtyOrdered || 0)
+      qtyOrdered: parseNumber_(s.qtyOrdered || 0)
     }));
 
     demands.sort((a, b) => (parseDate_(a.jobEndDate) || 0) - (parseDate_(b.jobEndDate) || 0));
@@ -844,7 +856,7 @@ function allocateMaterials_(demandsList, suppliesMap, parentCtx) {
 
     let sIdx = 0;
     for (const d of demands) {
-      let needed = Number(d.qtyShort || 0);
+      let needed = parseNumber_(d.qtyShort || 0);
       let firstPo = null;
 
       while (needed > 0 && sIdx < supplies.length) {
