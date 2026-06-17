@@ -114,7 +114,7 @@ function parseNotesParts_(noteStr) {
   const endMatch = note.match(/End Date=([^;]+)/i);
   const endDate = endMatch ? normalizeString_(endMatch[1]) : "";
 
-  // UPDATED: Capture ALL P-entries (concatenated), including TBD (No PO dates)
+  // Capture ALL P-entries (concatenated), including TBD (No PO dates)
   const pMatches = note.match(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*/gi) || [];
   const pFull = pMatches.map(s => s.trim()).join("; ");
 
@@ -538,7 +538,14 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       }
       
       if (notesChanged && deltas.length) {
-        rowChangelogs.push(`* ${deltas.join(" | ")}`);
+        // Split the combined delta string into individual lines so "Arrived" notes can be filtered cleanly later
+        deltas.forEach(delta => {
+          if (delta.includes('Arrived:') || delta.includes('New Short:') || delta.includes('Shifted:')) {
+            delta.split(' | ').forEach(p => rowChangelogs.push(`* ${p}`));
+          } else {
+            rowChangelogs.push(`* ${delta}`);
+          }
+        });
       }
 
       if (rowChangelogs.length > 0) {
@@ -547,11 +554,17 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         
         let pcLines = currentPCNotes ? currentPCNotes.split('\n') : [];
         
-        // Filter out any older changelogs (lines starting with "*")
-        pcLines = pcLines.filter(line => !line.trim().startsWith('*'));
+        // Filter out ONLY the older "* Arrived" changelog lines so they don't persist.
+        // All other "*" lines (Due date, New Short, etc.) WILL persist in the cell's history.
+        pcLines = pcLines.filter(line => {
+          const t = line.trim();
+          return !(t.startsWith('*') && t.includes('Arrived'));
+        });
         
-        // Add a blank line to leave space for New Manual notes
-        pcLines.push('');
+        // Add a blank line to leave space for New Manual notes if one isn't already there
+        if (pcLines.length > 0 && pcLines[pcLines.length - 1].trim() !== '') {
+          pcLines.push('');
+        }
         
         // Append the new, concise changelogs to the bottom
         pcLines.push(...rowChangelogs);
@@ -799,7 +812,7 @@ function loadShortageData_(sheet, parentCtx) {
     const date = parseDate_(r[h["PO Due Date"]]);
     const item = normalizeString_(r[h["Item"]]); 
     
-    // FIX: Include shortages even if they don't have a PO due date yet (TBD)
+    // Include shortages even if they don't have a PO due date yet (TBD)
     if (key && item) {
       if (!map.has(key)) map.set(key, []);
       map.get(key).push({ date, item });
