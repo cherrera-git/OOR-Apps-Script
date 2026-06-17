@@ -480,7 +480,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
               if (!oldDate) {
                 newShort.push(a);
               } else {
-                shifted.push(`${item} (${oldDate}→${newDate})`);
+                shifted.push(`${item} (P-${oldDate}→P-${newDate})`);
               }
             } else {
               newShort.push(a);
