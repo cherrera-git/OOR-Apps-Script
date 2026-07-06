@@ -552,25 +552,11 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         // Fetch existing PC notes for this row
         const currentPCNotes = normalizeString_(disp[i][pcNotesCol - 1]);
         
-        let pcLines = currentPCNotes ? currentPCNotes.split('\n') : [];
-        
-        // Filter out ONLY the older "* Arrived" changelog lines so they don't persist.
-        // All other "*" lines (Due date, New Short, etc.) WILL persist in the cell's history.
-        pcLines = pcLines.filter(line => {
-          const t = line.trim();
-          return !(t.startsWith('*') && t.includes('Arrived'));
-        });
-        
-        // Add a blank line to leave space for New Manual notes if one isn't already there
-        if (pcLines.length > 0 && pcLines[pcLines.length - 1].trim() !== '') {
-          pcLines.push('');
-        }
-        
-        // Append the new, concise changelogs to the bottom
-        pcLines.push(...rowChangelogs);
+        // Run the Subject Deduplication Engine to purge old mentions and append new ones cleanly
+        const updatedPCNotes = buildCleanPCNotes_(currentPCNotes, rowChangelogs);
         
         // Queue the update to be written to the sheet
-        pcNotesUpdates.set(rowNum, pcLines.join('\n'));
+        pcNotesUpdates.set(rowNum, updatedPCNotes);
       }
     }
   }
@@ -1043,16 +1029,27 @@ function getActualLastRow_(sheet, col) {
 function processMoveOperation_(src, tar, rows, desc) {
   if (!rows || !rows.length) return;
 
-  // Group contiguous rows into blocks to minimize API copy operations.
-  const sorted = rows.slice().sort((a, b) => a - b);
+  // 1. Sanitize input rows (remove duplicates, validate integers, filter out of bounds)
+  const maxSrcRows = src.getMaxRows();
+  const validRows = [...new Set(rows.map(Number).filter(r => !isNaN(r) && r > 0 && r <= maxSrcRows))].sort((a, b) => a - b);
+  if (!validRows.length) return;
+
   let nextRow = tar.getLastRow() + 1;
   const lastCol = src.getLastColumn();
+  if (lastCol === 0) return;
 
+  // 2. Ensure target sheet has enough physical rows to receive the copied blocks
+  const requiredTarRows = nextRow + validRows.length - 1;
+  if (requiredTarRows > tar.getMaxRows()) {
+    tar.insertRowsAfter(tar.getMaxRows(), requiredTarRows - tar.getMaxRows());
+  }
+
+  // 3. Group contiguous rows into blocks to minimize API copy operations
   const ranges = [];
-  let start = sorted[0], prev = sorted[0];
+  let start = validRows[0], prev = validRows[0];
 
-  for (let i = 1; i < sorted.length; i++) {
-    const r = sorted[i];
+  for (let i = 1; i < validRows.length; i++) {
+    const r = validRows[i];
     if (r === prev + 1) { 
       prev = r; 
       continue; 
@@ -1062,7 +1059,7 @@ function processMoveOperation_(src, tar, rows, desc) {
   }
   ranges.push([start, prev]);
 
-  // Execute copy blocks
+  // 4. Execute copy blocks
   ranges.forEach(([s, e]) => {
     const numRows = e - s + 1;
     const sourceRange = src.getRange(s, 1, numRows, lastCol);
@@ -1071,26 +1068,41 @@ function processMoveOperation_(src, tar, rows, desc) {
     nextRow += numRows;
   });
 
-  batchDeleteRows_(src, sorted);
+  // 5. Safely delete source rows
+  batchDeleteRows_(src, validRows);
 }
 
 function batchDeleteRows_(sheet, rows) {
-  if (!rows.length) return;
-  rows = rows.slice().sort((a, b) => a - b);
+  if (!rows || !rows.length) return;
+  
+  const maxRows = sheet.getMaxRows();
+  // Deduplicate and filter out invalid rows just in case called independently
+  const sorted = [...new Set(rows.map(Number).filter(r => !isNaN(r) && r > 0 && r <= maxRows))].sort((a, b) => a - b);
+  if (!sorted.length) return;
 
   const ranges = [];
-  let start = rows[0], prev = rows[0];
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
+  let start = sorted[0], prev = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    const r = sorted[i];
     if (r === prev + 1) { prev = r; continue; }
     ranges.push([start, prev]);
     start = prev = r;
   }
   ranges.push([start, prev]);
 
+  // Delete from bottom to top to preserve index integrity
   for (let i = ranges.length - 1; i >= 0; i--) {
     const [s, e] = ranges[i];
-    sheet.deleteRows(s, e - s + 1);
+    const numRows = e - s + 1;
+    
+    // Final safety check against dynamic dimensions (deleting alters getMaxRows)
+    const currentMax = sheet.getMaxRows();
+    if (s <= currentMax) {
+      const safeNumRows = Math.min(numRows, currentMax - s + 1);
+      if (safeNumRows > 0) {
+        sheet.deleteRows(s, safeNumRows);
+      }
+    }
   }
 }
 
@@ -1208,4 +1220,142 @@ function auditSyteLineJobsNotTracked_(ss, sourceData, reportSheetNames, runId, p
 
   logInfo_(ctx, "AUDIT RESULT", { tracked: tracked.size, sourceJobs: all.length, missing: total, cap, logged });
   return { total, logged, entries };
+}
+
+//==============================================================
+// CHANGELOG DEDUPLICATION ENGINE (Subject & Event Merging)
+//==============================================================
+
+/**
+ * Deduplicates and updates PC Notes changelog lines.
+ * Purges old date entries for any item or category being updated in the current run.
+ * @param {string} existingNotes - The raw text currently inside Column U (PC Notes).
+ * @param {Array<string>} newChangelogEntries - Array of new strings (e.g. ["* Shifted: UL1061 26BLU (P-6/19→P-6/30)"])
+ * @return {string} Clean, deduplicated PC Notes string.
+ */
+function buildCleanPCNotes_(existingNotes, newChangelogEntries) {
+  if (!existingNotes) existingNotes = "";
+
+  // 1. Separate static manual notes from automated asterisk (*) changelog lines
+  const rawLines = existingNotes.split("\n").map(l => l.trim()).filter(Boolean);
+
+  // 2. Identify active updates to purge from history
+  const activeUpdateSubjects = new Set();
+  let updatingDueDate = false;
+  let updatingEndDate = false;
+  let updatingPC = false;
+  let updatingCSP = false;
+
+  // Format A: Matches "Item (P-Date→P-Date)" (Used in * Shifted)
+  const subjectRegexA = /([A-Z0-9\-\.\s_\/+]+)\s*\([P|TBD|\d\/→]+\)/gi;
+  // Format B: Matches "P-Date (Item)" (Used in * New Short)
+  const subjectRegexB = /P-[A-Z0-9\/]+\s*\(\s*([A-Z0-9\-\.\s_\/+]+)\s*\)/gi;
+
+  // STRICT CLEAN: Ensure no empty elements sneak in from the new entries
+  const cleanNewEntries = newChangelogEntries.map(l => l.trim()).filter(Boolean);
+
+  cleanNewEntries.forEach(entry => {
+    // Flag if we are updating top-level job metrics
+    if (entry.startsWith("* Due date:")) updatingDueDate = true;
+    if (entry.startsWith("* End Date:")) updatingEndDate = true;
+    if (entry.startsWith("* PC:")) updatingPC = true;
+    if (entry.toUpperCase().includes("CSP")) updatingCSP = true;
+
+    // Extract subjects from "Arrived" notifications to purge their old shortage history
+    if (entry.toLowerCase().startsWith("* arrived:")) {
+      const arrivedStr = entry.replace(/\*\s*arrived:\s*/i, "");
+      const arrivedItems = arrivedStr.split(",").map(i => i.trim()).filter(Boolean);
+      arrivedItems.forEach(item => activeUpdateSubjects.add(item));
+    }
+
+    // Flag if we are updating specific material shortage subjects (Format A)
+    let match;
+    while ((match = subjectRegexA.exec(entry)) !== null) {
+      activeUpdateSubjects.add(match[1].trim());
+    }
+    
+    // Flag if we are updating specific material shortage subjects (Format B)
+    while ((match = subjectRegexB.exec(entry)) !== null) {
+      activeUpdateSubjects.add(match[1].trim());
+    }
+  });
+
+  // 3. Filter existing automated lines
+  let autoLines = rawLines.filter(line => line.startsWith("*"));
+  autoLines = autoLines.map(line => {
+    // Instantly purge temporary "* Arrived" notifications
+    if (line.toLowerCase().includes("arrived:")) return null;
+    
+    // Purge old top-level metrics if they are being updated in this run
+    if (updatingDueDate && line.startsWith("* Due date:")) return null;
+    if (updatingEndDate && line.startsWith("* End Date:")) return null;
+    if (updatingPC && line.startsWith("* PC:")) return null;
+    if (updatingCSP && line.toUpperCase().includes("CSP")) return null;
+
+    let modifiedLine = line;
+    
+    // Surgically remove old dates for the specific active shortage subjects
+    activeUpdateSubjects.forEach(subject => {
+      const escaped = escapeRegex_(subject);
+      
+      // Purge Format A: "ItemName (P-Old→P-New), "
+      const purgeRegexA = new RegExp(`${escaped}\\s*\\([^)]+\\),?\\s*`, "gi");
+      modifiedLine = modifiedLine.replace(purgeRegexA, "").trim();
+      
+      // Purge Format B: "P-Date (ItemName), "
+      const purgeRegexB = new RegExp(`P-[A-Z0-9\\/]+\\s*\\(\\s*${escaped}\\s*\\),?\\s*`, "gi");
+      modifiedLine = modifiedLine.replace(purgeRegexB, "").trim();
+    });
+
+    // Clean up lingering syntax artifacts from partial removals
+    modifiedLine = modifiedLine
+      .replace(/\*\s*(Shifted|New Short|Notes updated):\s*$/i, "") // Removes empty headers
+      .replace(/,\s*$/, "") // Removes trailing commas
+      .trim();
+
+    // If the line still has substantive content, keep it; otherwise drop it.
+    return modifiedLine.length > 2 ? modifiedLine : null;
+  }).filter(Boolean);
+
+  // 4. Compile final string
+  let combinedChangelog = [...autoLines, ...cleanNewEntries];
+  
+  // 5. Automated Visual Hierarchy Sorting
+  combinedChangelog.sort((a, b) => {
+    const getWeight = (str) => {
+      const s = str.toLowerCase();
+      if (s.startsWith("* due date")) return 1;
+      if (s.startsWith("* end date")) return 2;
+      if (s.startsWith("* pc")) return 3;
+      if (s.includes("csp")) return 4;
+      if (s.startsWith("* new short")) return 5;
+      if (s.startsWith("* shifted")) return 6;
+      if (s.startsWith("* arrived")) return 7;
+      return 8; // Any uncategorized lines
+    };
+    return getWeight(a) - getWeight(b);
+  });
+  
+  // Separate manual notes from automated history
+  const manualNotes = rawLines.filter(line => !line.trim().startsWith('*'));
+
+  // Clean up infinite spaces and prevent duplicate blank lines from stacking
+  const cleanManual = manualNotes.join('\n').trim();
+  const cleanHistory = combinedChangelog.join('\n').trim();
+
+  let finalNote = "";
+  if (cleanManual.length > 0) {
+    // 1 blank line at the top, followed by existing manual notes, a double space, then history
+    finalNote = "\n" + cleanManual + "\n\n" + cleanHistory;
+  } else {
+    // 1 blank line at the top, followed by a double space, then history
+    finalNote = "\n\n" + cleanHistory;
+  }
+
+  return finalNote;
+}
+
+/** Helper to escape special regex characters in MTN part numbers (like slashes or dashes) */
+function escapeRegex_(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
