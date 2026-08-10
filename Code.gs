@@ -38,9 +38,9 @@ const CONFIG = {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Update Tools")
-    .addItem("Step 1: Cleanup (Move & Archive)", "showCleanupDialog")
+    .addItem("Step 1: Import & Update", "showImportDialog")
     .addSeparator()
-    .addItem("Step 2: Import & Update", "showImportDialog")
+    .addItem("Step 2: Cleanup (Move & Archive)", "showCleanupDialog")
     .addToUi();
 }
 
