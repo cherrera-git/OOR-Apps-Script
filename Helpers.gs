@@ -162,15 +162,13 @@ function getCompositeJobKey_(j, s, sub) {
 }
 
 //==============================================================
-// EXTERNAL LOG (Bypassed per Phase 2 Refactoring)
+// EXTERNAL LOG (Bypassed per Refactoring)
 //==============================================================
 function writeToExternalLog_(logs, targetSheetName, parentCtx) {
-  // Silent return - remote dependency severed.
   return;
 }
 
 function logToolAction_(action, details, sheetName, targetSheetName, severity, runId, parentCtx) {
-  // Silent return - remote dependency severed.
   return;
 }
 
@@ -250,7 +248,6 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       if (summary && summary.unmatchedSamples) {
         if (sheetName === CONFIG.STOCK_SHEET_NAME) {
           if (!summary.unmatchedStockItems) summary.unmatchedStockItems = [];
-          // Capture ALL unmatched items for the final UI / Email summary block
           summary.unmatchedStockItems.push(jobKey || `(row ${rowNum})`);
         }
         if ((summary.unmatchedSamples[sheetName] || []).length < 10) {
@@ -260,7 +257,6 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       continue;
     }
 
-    // Capture values
     const oldDue = parseDate_(raw[i][h["MTL Due Date"]]);
     const oldNote = normalizeString_(disp[i][h["End Date Notes"]]);
     const oldNoteNorm = normalizeNotes_(oldNote);
@@ -303,7 +299,6 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       pcChanged = true;
     }
 
-    // Inline changelog generation for deduplication engine
     if (dueChanged || notesChanged || pcChanged) {
       const rowChangelogs = [];
       if (dueChanged) {
@@ -355,7 +350,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         const currentPCNotes = normalizeString_(disp[i][pcNotesCol - 1]);
         pcNotesUpdates.set(rowNum, buildCleanPCNotes_(currentPCNotes, rowChangelogs));
       }
-      logs.push({ jobOrder: jobKey }); // Marker for change counting
+      logs.push({ jobOrder: jobKey });
     }
   }
 
@@ -457,20 +452,32 @@ function loadCustomerPOMap_(sheet, splitSet, parentCtx) {
 function loadJobMaterialDemands_(sheet, splitSet, pClassMap, producedSet, custPoMap, parentCtx) {
   const h = getHeaders_(sheet);
   const demands = [];
+
   const sufKey = getSuffixKey_(h);
   if (!sufKey || h["Job"] === undefined) return demands;
-  sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues().forEach(row => {
+
+  const values = sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues();
+  values.forEach(row => {
     const item = normalizeString_(row[h["Item"]]);
     if (!item || producedSet.has(item)) return;
-    const key = normalizeJobKey_(getCompositeJobKey_(normalizeJobKey_(row[h["Job"]]), row[h[sufKey]], splitSet.has(normalizeJobKey_(row[h["Job"]]))));
+
+    const job = normalizeJobKey_(row[h["Job"]]);
+    const key = normalizeJobKey_(getCompositeJobKey_(job, row[h[sufKey]], splitSet.has(job)));
     if (!key) return;
+
     demands.push({
-      item, description: row[h["Material Description"]], jobOrder: key, productClass: pClassMap.get(key) || "",
+      item,
+      description: row[h["Material Description"]],
+      jobOrder: key,
+      productClass: pClassMap.get(key) || "",
       custPo: (custPoMap && custPoMap.get) ? (custPoMap.get(key) || "") : "",
-      qtyShort: parseNumber_(row[h["Qty Short"]] || 0), um: row[h["U/M"]],
-      assignedTo: row[h["Assigned To"]], jobEndDate: parseDate_(row[h["End Date"]]) || ""
+      qtyShort: parseNumber_(row[h["Qty Short"]] || 0),
+      um: row[h["U/M"]],
+      assignedTo: row[h["Assigned To"]],
+      jobEndDate: parseDate_(row[h["Due Date"]] !== undefined ? row[h["Due Date"]] : row[h["End Date"]]) || ""
     });
   });
+
   return demands;
 }
 
@@ -551,29 +558,50 @@ function allocateMaterials_(demandsList, suppliesMap, parentCtx) {
 
 function writeShortageList_(ss, results, parentCtx) {
   let sheet = ss.getSheetByName("Shortage List") || ss.insertSheet("Shortage List");
-  const headers = ["Assigned To", "Job Order", "Product Class", "Cust PO", "Job End Date", "Item", "Material Description", "U/M", "Qty Short", "PO", "PO Due Date", "PO Qty Remaining", "Status", "Qty To Buy"];
-  
-  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), headers.length)).clearContent();
+
+  const headers = [
+    "Assigned To", "Job Order", "Product Class", "Cust PO", "Job Due Date",
+    "Item", "Material Description", "U/M", "Qty Short",
+    "PO", "PO Due Date", "PO Qty Remaining", "Status", "Qty To Buy"
+  ];
+
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), headers.length)).clearContent();
+  }
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.setFrozenRows(1);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
 
   if (results.length > 0) {
-    sheet.getRange(2, 2, results.length, 1).setNumberFormat("@"); 
-    sheet.getRange(2, 4, results.length, 1).setNumberFormat("@"); 
-    sheet.getRange(2, 6, results.length, 1).setNumberFormat("@"); 
-    sheet.getRange(2, 10, results.length, 1).setNumberFormat("@"); 
+    sheet.getRange(2, 2, results.length, 1).setNumberFormat("@"); // Job Order
+    sheet.getRange(2, 4, results.length, 1).setNumberFormat("@"); // Cust PO
+    sheet.getRange(2, 6, results.length, 1).setNumberFormat("@"); // Item
+    sheet.getRange(2, 10, results.length, 1).setNumberFormat("@"); // PO
 
     const out = results.map(r => [
-      r.assignedTo, r.jobOrder, r.productClass, r.custPo || "", (r.jobEndDate instanceof Date ? r.jobEndDate : (parseDate_(r.jobEndDate) || "")),
-      r.item, r.description, r.um, r.qtyShort, r.po, (r.poDueDate instanceof Date ? r.poDueDate : (parseDate_(r.poDueDate) || "")),
-      (r.poQtyRemaining === "-" ? "" : r.poQtyRemaining), r.status, r.qtyToBuy
+      r.assignedTo,
+      r.jobOrder,
+      r.productClass,
+      r.custPo || "",
+      (r.jobEndDate instanceof Date ? r.jobEndDate : (parseDate_(r.jobEndDate) || "")),
+      r.item,
+      r.description,
+      r.um,
+      r.qtyShort,
+      r.po,
+      (r.poDueDate instanceof Date ? r.poDueDate : (parseDate_(r.poDueDate) || "")),
+      (r.poQtyRemaining === "-" ? "" : r.poQtyRemaining),
+      r.status,
+      r.qtyToBuy
     ]);
 
     sheet.getRange(2, 1, out.length, headers.length).setValues(out);
-    sheet.getRange(2, 5, out.length, 1).setNumberFormat("M/dd/yyyy"); 
-    sheet.getRange(2, 11, out.length, 1).setNumberFormat("M/dd/yyyy"); 
-    sheet.getRange(2, 1, out.length, headers.length).sort({ column: 11, ascending: true });
+
+    sheet.getRange(2, 5, out.length, 1).setNumberFormat("M/dd/yyyy"); // Job Due Date
+    sheet.getRange(2, 11, out.length, 1).setNumberFormat("M/dd/yyyy"); // PO Due Date
+
+    // Sort by Column 5 (Job Due Date) from oldest to newest
+    sheet.getRange(2, 1, out.length, headers.length).sort({ column: 5, ascending: true });
   }
 }
 
@@ -682,31 +710,53 @@ function batchDeleteRows_(sheet, rows) {
 }
 
 //==============================================================
-// AUDIT: SyteLine jobs not tracked (✅ PO column filled with Cust PO)
+// AUDIT: SyteLine jobs not tracked (Unique Job Order Fuzzy Match)
 //==============================================================
 function auditSyteLineJobsNotTracked_(ss, sourceData, reportSheetNames, runId, parentCtx) {
+  const ctx = childCtx_(parentCtx || createLogCtx_(runId, "auditSyteLineJobsNotTracked_", { spreadsheet: ss.getName() }), "auditSyteLineJobsNotTracked_");
+
   const tracked = new Set();
+  const makeFuzzy = (k) => String(k).toUpperCase().replace(/[\s\-]/g, "");
+
   reportSheetNames.forEach(name => {
     const sh = ss.getSheetByName(name);
     if (!sh) return;
+    
+    // STRICT CHECK: Look exclusively for unique Job Order or Job columns (ignoring Sales Order to prevent duplicate grouping false positives)
     const h = getHeaders_(sh);
-    if (h["Job Order"] === undefined) return;
-    const lastRow = getActualLastRow_(sh, h["Job Order"] + 1);
+    const jobColIdx = colAny_(h, ["Job Order", "Job"]);
+    if (jobColIdx === undefined) return;
+    
+    const lastRow = getActualLastRow_(sh, jobColIdx + 1);
     if (lastRow <= 1) return;
-    sh.getRange(2, h["Job Order"] + 1, lastRow - 1, 1).getDisplayValues().forEach(r => {
+    
+    sh.getRange(2, jobColIdx + 1, lastRow - 1, 1).getDisplayValues().forEach(r => {
       const k = normalizeJobKey_(r[0]);
-      if (k) tracked.add(normalizeJobKeyForCompare_(k));
+      if (k) {
+        const norm = normalizeJobKeyForCompare_(k).toUpperCase();
+        tracked.add(norm); 
+        tracked.add(makeFuzzy(norm)); 
+        
+        const base = norm.split(/[\s\-]/)[0];
+        if (base) tracked.add(base); 
+      }
     });
   });
 
   const all = Array.from(sourceData.jobsInSource.values());
   const missing = [];
+  
   for (let i = 0; i < all.length; i++) {
     const key = normalizeJobKey_(all[i]);
-    if (!tracked.has(normalizeJobKeyForCompare_(key))) missing.push(key);
+    const norm = normalizeJobKeyForCompare_(key).toUpperCase();
+    const fuzzy = makeFuzzy(norm);
+    const base = norm.split(/[\s\-]/)[0];
+    
+    if (!tracked.has(norm) && !tracked.has(fuzzy) && !tracked.has(base)) {
+      missing.push(key);
+    }
   }
 
-  // Construct UI output array encompassing ALL missing items completely ignoring any external log limits
   const missingArray = missing.map(key => {
     const cust = normalizeString_(sourceData.customerMap.get(key) || "");
     const status = normalizeString_(sourceData.statusMap.get(key) || "");
