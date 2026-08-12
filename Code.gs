@@ -18,8 +18,6 @@ const CONFIG = {
   SHARED_ACCOUNT_EMAIL: "mtntechstaff@gmail.com",
   AUDIT_SOURCE_ONLY_ENABLED: true,
   AUDIT_SOURCE_ONLY_MAX_ENTRIES: 500,
-  
-  // Notice: UNMATCHED_SAMPLE_LIMIT_PER_SHEET removed to allow full capture of exceptions
 
   // Safety
   SAFETY_ENABLED: true,
@@ -142,7 +140,8 @@ function executeMoveNewOrdersToOOR_(ss, parentCtx) {
     const line = normalizeString_(vals[i][h["Line Status"]]).toLowerCase();
     const parts = normalizeString_(vals[i][h["Parts Status"]]).toLowerCase();
     
-    // Filter strictly for active WIP jobs only. Closed/Invalid are skipped here and caught by the Archive sweep.
+    // STRICT CHECK: Filter strictly for active WIP jobs only. 
+    // Closed/Invalid are skipped here and caught by the Archive sweep.
     if (line !== "closed" && line !== "invalid" && parts !== "" && parts !== "not in wip") {
       moveIdx.push(i + 2);
     }
@@ -212,12 +211,12 @@ function sortOORSheet_(ss, parentCtx) {
   
   // Execute advanced multi-level sort
   range.sort([
-    { column: jobCol, ascending: true },  // Priority 1: Job Order (A-Z)
-    { column: poCol, ascending: true },   // Priority 2: PO (A-Z)
-    { column: dueCol, ascending: true }   // Priority 3: MTL Due Date (A-Z / Oldest to Newest)
+    { column: dueCol, ascending: true },  // Priority 1: MTL Due Date (Oldest to Newest)
+    { column: jobCol, ascending: true },  // Priority 2: Job Order (A-Z)
+    { column: poCol, ascending: true }    // Priority 3: PO (A-Z)
   ]);
 
-  logInfo_(ctx, "OOR Sorted", { jobCol, poCol, dueCol });
+  logInfo_(ctx, "OOR Sorted", { dueCol, jobCol, poCol });
 }
 
 //==============================================================
