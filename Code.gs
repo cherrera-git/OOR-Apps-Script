@@ -1,7 +1,7 @@
 /**
  * Code.gs
- * - CONFIG defined here.
  * - Main logic for Cleanup and Update workflows.
+ * - External logging and user dependencies have been removed.
  */
 
 const CONFIG = {
@@ -18,6 +18,8 @@ const CONFIG = {
   SHARED_ACCOUNT_EMAIL: "mtntechstaff@gmail.com",
   AUDIT_SOURCE_ONLY_ENABLED: true,
   AUDIT_SOURCE_ONLY_MAX_ENTRIES: 500,
+  
+  // Notice: UNMATCHED_SAMPLE_LIMIT_PER_SHEET removed to allow full capture of exceptions
 
   // Safety
   SAFETY_ENABLED: true,
@@ -98,16 +100,16 @@ function runCleanupSequence_() {
 
   logInfo_(ctx, "START");
 
-  if(typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Moving New Orders...");
+  if (typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Moving New Orders...");
   const moveCount = executeMoveNewOrdersToOOR_(ss, ctx);
 
-  if(typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Archiving Closed Jobs...");
+  if (typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Archiving Closed Jobs...");
   const archiveCount = executeMoveOORToArchive_(ss, ctx);
 
-  if(typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Sorting OOR...");
+  if (typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Sorting OOR...");
   sortOORSheet_(ss, ctx);
 
-  if(typeof uiToastDone_ === 'function') uiToastDone_(ss, "Cleanup Complete");
+  if (typeof uiToastDone_ === 'function') uiToastDone_(ss, "Cleanup Complete");
   
   logToolAction_("Step 2: Cleanup", `Moved: ${moveCount}, Archived: ${archiveCount}`, ss.getName(), "Update Change Log", "INFO", runId, ctx);
   logInfo_(ctx, "FINISH", { moveCount, archiveCount });
@@ -125,10 +127,12 @@ function executeMoveNewOrdersToOOR_(ss, parentCtx) {
 
   const h = getHeaders_(source);
   
+  // Calculate MAX rows based on whichever is higher: Job Order or Sales Order
   let lastRow = 0;
   if (h["Job Order"] !== undefined) lastRow = Math.max(lastRow, getActualLastRow_(source, h["Job Order"] + 1));
   if (h["Sales Order"] !== undefined) lastRow = Math.max(lastRow, getActualLastRow_(source, h["Sales Order"] + 1));
   
+  // Fallback if both are empty/missing
   if (lastRow <= 1) return 0;
 
   const vals = source.getRange(2, 1, lastRow - 1, source.getLastColumn()).getValues();
@@ -138,7 +142,7 @@ function executeMoveNewOrdersToOOR_(ss, parentCtx) {
     const line = normalizeString_(vals[i][h["Line Status"]]).toLowerCase();
     const parts = normalizeString_(vals[i][h["Parts Status"]]).toLowerCase();
     
-    // STRICTLY filter for Active WIP jobs only.
+    // Filter strictly for active WIP jobs only. Closed/Invalid are skipped here and caught by the Archive sweep.
     if (line !== "closed" && line !== "invalid" && parts !== "" && parts !== "not in wip") {
       moveIdx.push(i + 2);
     }
@@ -154,7 +158,7 @@ function executeMoveOORToArchive_(ss, parentCtx) {
   if (!archive) return 0;
 
   let total = 0;
-  // Expanded sweep scans New Orders directly as well
+  // Expanded sweep scans New Orders directly to catch jobs that finished before ever moving to OOR
   ["New Orders", "OOR", CONFIG.STOCK_SHEET_NAME].forEach(name => {
     const s = ss.getSheetByName(name);
     if (!s) return;
@@ -165,6 +169,7 @@ function executeMoveOORToArchive_(ss, parentCtx) {
     if (h["Job Order"] !== undefined) lastRow = Math.max(lastRow, getActualLastRow_(s, h["Job Order"] + 1));
     if (h["Sales Order"] !== undefined) lastRow = Math.max(lastRow, getActualLastRow_(s, h["Sales Order"] + 1));
     
+    // Fallback to "Line Status" if primary columns are missing or empty
     if (lastRow <= 1 && h["Line Status"] !== undefined) {
       lastRow = getActualLastRow_(s, h["Line Status"] + 1);
     }
@@ -192,22 +197,24 @@ function sortOORSheet_(ss, parentCtx) {
   const ctx = childCtx_(parentCtx, "sortOORSheet_");
   const sheet = ss.getSheetByName("OOR");
   
+  // If sheet doesn't exist or only has a header row, do nothing
   if (!sheet || sheet.getLastRow() <= 1) return;
 
   const h = getHeaders_(sheet);
   
-  // Find column indexes dynamically (fallback values used if header not found)
+  // Find the columns dynamically by header name (fallback values if headers are missing)
   const jobCol = (h["Job Order"] !== undefined) ? h["Job Order"] + 1 : 8;
   const poCol = (h["PO"] !== undefined) ? h["PO"] + 1 : 10;
   const dueCol = (h["MTL Due Date"] !== undefined) ? h["MTL Due Date"] + 1 : 18;
 
+  // Define the data range (excluding row 1 header)
   const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn());
   
-  // Execute multi-level sort exactly as requested
+  // Execute advanced multi-level sort
   range.sort([
-    { column: jobCol, ascending: true },  // 1: Job Order (A-Z)
-    { column: poCol, ascending: true },   // 2: PO (A-Z)
-    { column: dueCol, ascending: true }   // 3: MTL Due Date (A-Z)
+    { column: jobCol, ascending: true },  // Priority 1: Job Order (A-Z)
+    { column: poCol, ascending: true },   // Priority 2: PO (A-Z)
+    { column: dueCol, ascending: true }   // Priority 3: MTL Due Date (A-Z / Oldest to Newest)
   ]);
 
   logInfo_(ctx, "OOR Sorted", { jobCol, poCol, dueCol });
@@ -224,24 +231,25 @@ function runFullUpdateSequence_() {
   logInfo_(ctx, "START");
   
   let lock;
-  if(typeof uiTryLockOrAlert_ === 'function') {
+  if (typeof uiTryLockOrAlert_ === 'function') {
     lock = uiTryLockOrAlert_(runId);
     if (!lock) return "Error: Update already running. Try again in a moment.";
   }
 
   try {
-    if(typeof uiRequireSheets_ === 'function') {
+    if (typeof uiRequireSheets_ === 'function') {
       const preflightOk = uiRequireSheets_(ss, ["ToExcel_JobOrders", "ToExcel_JobMaterialsListing", "ToExcel_PurchaseOrderListing", "ToExcel_CustomerPart"], "Missing Sheets", runId);
       if (!preflightOk) return "Error: Missing required export sheets. Please import them first.";
     }
 
-    if(typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Building Shortage List...");
+    if (typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Building Shortage List...");
     const shortageCount = createShortageList(childCtx_(ctx, "createShortageList"));
 
-    if(typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Updating Tracking Sheets...");
+    if (typeof uiToastPhase_ === 'function') uiToastPhase_(ss, runId, "Updating Tracking Sheets...");
     const results = updateOORSheetData(runId, childCtx_(ctx, "updateOORSheetData"));
 
-    if(typeof uiToastDone_ === 'function') uiToastDone_(ss, "Update complete!");
+    if (typeof uiToastDone_ === 'function') uiToastDone_(ss, "Update complete!");
+    logToolAction_("Step 1: Import & Update", `Run ${runId} Complete`, ss.getName(), "Update Change Log", "INFO", runId, ctx);
     logInfo_(ctx, "FINISH", { shortageCount, results });
 
     // Format the summary for UI output and Email
@@ -340,6 +348,8 @@ function importCsvFiles(fileData, meta) {
     const targetName = normalizeImportTargetName_(f);
     const target = ss.getSheetByName(targetName);
 
+    logDebug_(ctx, "Map file", { file: f, targetName, exists: !!target });
+
     if (!target) {
       ignoredFiles.push(f);
       continue;
@@ -352,6 +362,19 @@ function importCsvFiles(fileData, meta) {
     if (v && v.length) warnings.push(...v.map(w => `${target.getName()}: ${w}`));
   }
 
+  logToolAction_(
+    "Import Data",
+    `Run ${runId}:\n` +
+    `Updated: ${updatedSheets.length ? updatedSheets.join(", ") : "(none)"}\n` +
+    `Ignored: ${ignoredFiles.length ? ignoredFiles.join(", ") : "(none)"}\n` +
+    `Warnings:\n${warnings.length ? warnings.join("\n") : "(none)"}`,
+    ss.getName(),
+    "Update Change Log",
+    warnings.length ? "WARN" : "INFO",
+    runId,
+    ctx
+  );
+
   logInfo_(ctx, "FINISH", { updatedSheets, ignoredFiles, warningsCount: warnings.length });
   return { updatedSheets, ignoredFiles, warnings };
 }
@@ -362,11 +385,15 @@ function importCsvFiles(fileData, meta) {
 function createShortageList(parentCtx) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ctx = childCtx_(parentCtx || createLogCtx_(generateRunId_(), "createShortageList", { spreadsheet: ss.getName() }), "createShortageList");
-  
+  logInfo_(ctx, "START");
+
   const jobMat = ss.getSheetByName("ToExcel_JobMaterialsListing");
   const poListing = ss.getSheetByName("ToExcel_PurchaseOrderListing");
   const jobOrders = ss.getSheetByName("ToExcel_JobOrders");
-  if (!jobMat || !poListing || !jobOrders) return 0;
+  if (!jobMat || !poListing || !jobOrders) {
+    logWarn_(ctx, "Missing required sheets", { jobMat: !!jobMat, poListing: !!poListing, jobOrders: !!jobOrders });
+    return 0;
+  }
 
   const splitJobsSet = scanForSubassemblies_(jobMat, ctx);
   const pClassMap = loadProductClassMap_(jobOrders, splitJobsSet, ctx);
@@ -377,6 +404,8 @@ function createShortageList(parentCtx) {
   const results = allocateMaterials_(demands, supplies, ctx);
 
   writeShortageList_(ss, results, ctx);
+
+  logInfo_(ctx, "FINISH", { results: results.length });
   return results.length;
 }
 
@@ -386,12 +415,14 @@ function createShortageList(parentCtx) {
 function updateOORSheetData(runId, parentCtx) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ctx = childCtx_(parentCtx || createLogCtx_(runId, "updateOORSheetData", { spreadsheet: ss.getName() }), "updateOORSheetData");
+  logInfo_(ctx, "START");
 
   const jobOrders = ss.getSheetByName("ToExcel_JobOrders");
   const shortage = ss.getSheetByName("Shortage List");
   const custPart = ss.getSheetByName("ToExcel_CustomerPart");
   
   if (!jobOrders || !shortage || !custPart) {
+    logWarn_(ctx, "Missing required sheets", { jobOrders: !!jobOrders, shortage: !!shortage, custPart: !!custPart });
     return {
       changeLogCount: 0, dueDateChanges: 0, noteChanges: 0, pcFilledChanges: 0,
       unmatchedBySheet: { "OOR": 0, [CONFIG.STOCK_SHEET_NAME]: 0, "New Orders": 0 },
@@ -413,7 +444,7 @@ function updateOORSheetData(runId, parentCtx) {
     pcFilledChanges: 0,
     unmatchedBySheet: { "OOR": 0, [CONFIG.STOCK_SHEET_NAME]: 0, "New Orders": 0 },
     unmatchedSamples: { "OOR": [], [CONFIG.STOCK_SHEET_NAME]: [], "New Orders": [] },
-    unmatchedStockItems: [] // Store full list for exception reporting
+    unmatchedStockItems: [] // Store full list for the final UI / Email exception reporting
   };
 
   const combinedLog = [];
@@ -425,11 +456,18 @@ function updateOORSheetData(runId, parentCtx) {
     combinedLog.push(...r.logs);
   });
 
+  // Calculate the audit for untracked SyteLine jobs (incorporating new fuzzy logic to eliminate false positives)
   const audit = (CONFIG.AUDIT_SOURCE_ONLY_ENABLED === false)
     ? { total: 0, logged: 0, entries: [], missingArray: [] }
     : auditSyteLineJobsNotTracked_(ss, sourceData, sheetsToProcess, runId, ctx);
 
-  const changeLogCount = combinedLog.filter(e => e.jobOrder !== "TOOL ACTION").length;
+  // Still count changes internally for the summary stats, even without external log pushing
+  const changeLogCount = combinedLog.filter(e =>
+    e.jobOrder !== "TOOL ACTION" &&
+    e.customer !== "SYTELINE NOT TRACKED" &&
+    e.customer !== "RUN SUMMARY" &&
+    e.customer !== "UNMATCHED SUMMARY"
+  ).length;
 
   const out = {
     changeLogCount,
@@ -453,13 +491,28 @@ function updateOORSheetData(runId, parentCtx) {
 function buildRunSummaryLog_(runId, summary) {
   return {
     reportSheet: "Run Summary", projectCoordinator: "", jobOrder: "TOOL ACTION", customer: "RUN SUMMARY",
-    po: "", qty: "", itemNo: "", severity: "INFO", runId, changes: []
+    po: "", qty: "", itemNo: "", severity: "INFO", runId,
+    changes: [
+      `Run ${runId} finished updating the tracking sheets.`,
+      `Changes applied (by type):`,
+      `• Due date updates: ${summary.dueDateChanges}`,
+      `• Notes refreshed: ${summary.noteChanges}`,
+      `• Project Coordinator filled: ${summary.pcFilledChanges}`
+    ]
   };
 }
 
 function buildUnmatchedSummaryLog_(runId, summary) {
+  const stock = CONFIG.STOCK_SHEET_NAME;
+  const lines = [
+    `Run ${runId}: Some rows did not match any Job Order in ToExcel_JobOrders.`,
+    `OOR: ${summary.unmatchedBySheet.OOR} unmatched.`,
+    `${stock}: ${summary.unmatchedBySheet[stock]} unmatched.`,
+    `New Orders: ${summary.unmatchedBySheet["New Orders"]} unmatched.`
+  ];
   return {
     reportSheet: "Unmatched Summary", projectCoordinator: "", jobOrder: "TOOL ACTION", customer: "UNMATCHED SUMMARY",
-    po: "", qty: "", itemNo: "", severity: "INFO", runId, changes: []
+    po: "", qty: "", itemNo: "", severity: (summary.unmatchedBySheet["New Orders"] > 0 ? "WARN" : "INFO"),
+    runId, changes: lines
   };
 }
