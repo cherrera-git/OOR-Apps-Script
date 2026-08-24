@@ -210,14 +210,14 @@ function sortOORSheet_(ss, parentCtx) {
   // Define the data range (excluding row 1 header)
   const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn());
   
-  // Execute advanced multi-level sort
+  // Execute advanced multi-level sort - Prioritized by Due Date for OOR logic
   range.sort([
-    { column: jobCol, ascending: true },  // Priority 1: Job Order (A-Z)
-    { column: poCol, ascending: true },   // Priority 2: PO (A-Z)
-    { column: dueCol, ascending: true }   // Priority 3: MTL Due Date (A-Z / Oldest to Newest)
+    { column: dueCol, ascending: true },  // Priority 1: MTL Due Date (Oldest to Newest)
+    { column: jobCol, ascending: true },  // Priority 2: Job Order (A-Z)
+    { column: poCol, ascending: true }    // Priority 3: PO (A-Z)
   ]);
 
-  logInfo_(ctx, "OOR Sorted", { jobCol, poCol, dueCol });
+  logInfo_(ctx, "OOR Sorted", { dueCol, jobCol, poCol });
 }
 
 //==============================================================
