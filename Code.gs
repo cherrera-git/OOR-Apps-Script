@@ -238,7 +238,7 @@ function runFullUpdateSequence_() {
 
   try {
     if (typeof uiRequireSheets_ === 'function') {
-      const preflightOk = uiRequireSheets_(ss, ["ToExcel_JobOrders", "ToExcel_JobMaterialsListing", "ToExcel_PurchaseOrderListing", "ToExcel_CustomerPart"], "Missing Sheets", runId);
+      const preflightOk = uiRequireSheets_(ss, ["ToExcel_JobOrders", "ToExcel_JobMaterialsListing", "ToExcel_PurchaseOrderListing"], "Missing Sheets", runId);
       if (!preflightOk) return "Error: Missing required export sheets. Please import them first.";
     }
 
@@ -419,10 +419,10 @@ function updateOORSheetData(runId, parentCtx) {
 
   const jobOrders = ss.getSheetByName("ToExcel_JobOrders");
   const shortage = ss.getSheetByName("Shortage List");
-  const custPart = ss.getSheetByName("ToExcel_CustomerPart");
+  const jobMat = ss.getSheetByName("ToExcel_JobMaterialsListing");
   
-  if (!jobOrders || !shortage || !custPart) {
-    logWarn_(ctx, "Missing required sheets", { jobOrders: !!jobOrders, shortage: !!shortage, custPart: !!custPart });
+  if (!jobOrders || !shortage || !jobMat) {
+    logWarn_(ctx, "Missing required sheets", { jobOrders: !!jobOrders, shortage: !!shortage, jobMat: !!jobMat });
     return {
       changeLogCount: 0, dueDateChanges: 0, noteChanges: 0, pcFilledChanges: 0,
       unmatchedBySheet: { "OOR": 0, [CONFIG.STOCK_SHEET_NAME]: 0, "New Orders": 0 },
@@ -433,7 +433,7 @@ function updateOORSheetData(runId, parentCtx) {
   const splitJobsSet = scanForSubassemblies_(jobOrders, ctx);
   const sourceData = loadSourceJobData_(jobOrders, splitJobsSet, ctx);
   const shortageData = loadShortageData_(shortage, ctx);
-  const cspData = loadCustomerPartData_(custPart, splitJobsSet, ctx);
+  const cspData = loadCustomerPartData_(jobMat, splitJobsSet, ctx);
 
   const sheetsToProcess = ["OOR", CONFIG.STOCK_SHEET_NAME, "New Orders"];
 
