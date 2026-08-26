@@ -339,6 +339,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
           });
         }
         
+        // Log changes to CSP Status cleanly
         if (oldParts.csp !== newParts.csp) {
           const n = (newParts.csp || "").toLowerCase();
           if (n === "") {
@@ -461,13 +462,24 @@ function loadJobMaterialDemands_(sheet, splitSet, pClassMap, producedSet, custPo
 
   const values = sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues();
   values.forEach(row => {
+    // FIX: Ignore lines with no actual material shortage
+    const qtyShort = parseNumber_(row[h["Qty Short"]] || 0);
+    if (qtyShort <= 0) return;
+    
+    // FIX: Ignore completed or closed material lines
+    const status = (h["Status"] !== undefined) ? normalizeString_(row[h["Status"]]).toLowerCase() : "";
+    if (status === "complete" || status === "closed") return;
+
     const item = normalizeString_(row[h["Item"]]);
     if (!item || producedSet.has(item)) return;
 
-    // FIX: Only exclude ACTUAL Customer Supplied Parts (CSPs) from the Shortage List.
-    // We identify them by checking if the Item or Description contains "CSP".
+    // FIX: Strictly exclude Customer Supplied Parts (CSPs) from the Purchase Order Shortage List.
     const desc = normalizeString_(row[h["Material Description"]]);
-    const isCSP = item.toUpperCase().includes("CSP") || desc.toUpperCase().includes("CSP");
+    const isCSP = item.toUpperCase().includes("CSP") || 
+                  desc.toUpperCase().includes("CSP") || 
+                  item.toUpperCase().includes("CUSTOMER PART") || 
+                  desc.toUpperCase().includes("CUSTOMER PART");
+    
     if (isCSP) return; 
 
     const job = normalizeJobKey_(row[h["Job"]]);
@@ -476,11 +488,11 @@ function loadJobMaterialDemands_(sheet, splitSet, pClassMap, producedSet, custPo
 
     demands.push({
       item,
-      description: row[h["Material Description"]],
+      description: desc,
       jobOrder: key,
       productClass: pClassMap.get(key) || "",
       custPo: (custPoMap && custPoMap.get) ? (custPoMap.get(key) || "") : "",
-      qtyShort: parseNumber_(row[h["Qty Short"]] || 0),
+      qtyShort: qtyShort,
       um: row[h["U/M"]],
       assignedTo: row[h["Assigned To"]],
       jobEndDate: parseDate_(row[h["Due Date"]] !== undefined ? row[h["Due Date"]] : row[h["End Date"]]) || ""
@@ -531,7 +543,10 @@ function loadCustomerPartData_(sheet, splitSet, parentCtx) {
     // We must strictly filter for rows where the Item or Description indicates it is a CSP.
     const item = normalizeString_(r[h["Item"]]);
     const desc = normalizeString_(r[h["Material Description"]]);
-    const isCSP = item.toUpperCase().includes("CSP") || desc.toUpperCase().includes("CSP");
+    const isCSP = item.toUpperCase().includes("CSP") || 
+                  desc.toUpperCase().includes("CSP") || 
+                  item.toUpperCase().includes("CUSTOMER PART") || 
+                  desc.toUpperCase().includes("CUSTOMER PART");
     
     if (!isCSP) return;
 
@@ -563,26 +578,49 @@ function allocateMaterials_(demandsList, suppliesMap, parentCtx) {
     demandsByItem.get(d.item).push(d);
   });
   const results = [];
+  
+  const getTime = (d) => { const date = parseDate_(d); return date ? date.getTime() : Infinity; };
+  
   for (const [item, demands] of demandsByItem.entries()) {
     const suppliesRaw = suppliesMap.get(item) || [];
     const supplies = suppliesRaw.map(s => ({ po: s.po, dueDate: (s.dueDate instanceof Date) ? new Date(s.dueDate.getTime()) : (parseDate_(s.dueDate) || ""), qtyOrdered: parseNumber_(s.qtyOrdered || 0) }));
-    demands.sort((a, b) => (parseDate_(a.jobEndDate) || 0) - (parseDate_(b.jobEndDate) || 0));
-    supplies.sort((a, b) => (parseDate_(a.dueDate) || 0) - (parseDate_(b.dueDate) || 0));
+    
+    demands.sort((a, b) => getTime(a.jobEndDate) - getTime(b.jobEndDate));
+    supplies.sort((a, b) => getTime(a.dueDate) - getTime(b.dueDate));
+    
     let sIdx = 0;
     for (const d of demands) {
       let needed = parseNumber_(d.qtyShort || 0);
-      let firstPo = null;
+      const usedPos = [];
+      
       while (needed > 0 && sIdx < supplies.length) {
-        if (!firstPo) firstPo = supplies[sIdx];
-        const take = Math.min(needed, supplies[sIdx].qtyOrdered);
+        const currentPo = supplies[sIdx];
+        const take = Math.min(needed, currentPo.qtyOrdered);
+        
+        if (take > 0) {
+          usedPos.push({ po: currentPo.po, dueDate: currentPo.dueDate, qtyRemaining: currentPo.qtyOrdered - take });
+        }
+        
         needed -= take;
-        supplies[sIdx].qtyOrdered -= take;
-        if (supplies[sIdx].qtyOrdered <= 0.001) sIdx++;
+        currentPo.qtyOrdered -= take;
+        if (currentPo.qtyOrdered <= 0.001) sIdx++;
       }
+      
+      let poStr = "-", poDueDate = "", poQtyRem = "-";
+      
+      if (usedPos.length > 0) {
+        poStr = usedPos.map(u => u.po).join(", ");
+        poDueDate = usedPos[0].dueDate; 
+        poQtyRem = usedPos[usedPos.length - 1].qtyRemaining; 
+      }
+
       results.push({
-        ...d, status: needed <= 0.001 ? "ALLOCATED" : "BUY MORE",
-        po: firstPo ? firstPo.po : "-", poDueDate: firstPo ? (firstPo.dueDate instanceof Date ? firstPo.dueDate : (parseDate_(firstPo.dueDate) || "")) : "",
-        poQtyRemaining: firstPo ? Math.max(0, firstPo.qtyOrdered) : "-", qtyToBuy: needed > 0 ? needed : 0
+        ...d, 
+        status: needed <= 0.001 ? "ALLOCATED" : "BUY MORE",
+        po: poStr, 
+        poDueDate: poDueDate instanceof Date ? poDueDate : (parseDate_(poDueDate) || ""),
+        poQtyRemaining: poQtyRem, 
+        qtyToBuy: needed > 0 ? needed : 0
       });
     }
   }
