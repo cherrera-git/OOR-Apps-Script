@@ -238,6 +238,7 @@ function runFullUpdateSequence_() {
 
   try {
     if (typeof uiRequireSheets_ === 'function') {
+      // Adjusted to only require the 3 remaining files
       const preflightOk = uiRequireSheets_(ss, ["ToExcel_JobOrders", "ToExcel_JobMaterialsListing", "ToExcel_PurchaseOrderListing"], "Missing Sheets", runId);
       if (!preflightOk) return "Error: Missing required export sheets. Please import them first.";
     }
