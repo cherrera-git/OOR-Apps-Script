@@ -341,7 +341,11 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         
         if (oldParts.csp !== newParts.csp) {
           const n = (newParts.csp || "").toLowerCase();
-          rowChangelogs.push(`* ${n.includes("not received") ? "Waiting on CSP" : (n.includes("partially") ? "Partial CSP Arrived" : "CSP Arrived")}`);
+          if (n === "") {
+            rowChangelogs.push(`* CSP Cleared`);
+          } else {
+            rowChangelogs.push(`* ${n.includes("not received") ? "Waiting on CSP" : (n.includes("partially") ? "Partial CSP Arrived" : "CSP Arrived")}`);
+          }
         }
       }
 
@@ -460,6 +464,12 @@ function loadJobMaterialDemands_(sheet, splitSet, pClassMap, producedSet, custPo
     const item = normalizeString_(row[h["Item"]]);
     if (!item || producedSet.has(item)) return;
 
+    // FIX: Only exclude ACTUAL Customer Supplied Parts (CSPs) from the Shortage List.
+    // We identify them by checking if the Item or Description contains "CSP".
+    const desc = normalizeString_(row[h["Material Description"]]);
+    const isCSP = item.toUpperCase().includes("CSP") || desc.toUpperCase().includes("CSP");
+    if (isCSP) return; 
+
     const job = normalizeJobKey_(row[h["Job"]]);
     const key = normalizeJobKey_(getCompositeJobKey_(job, row[h[sufKey]], splitSet.has(job)));
     if (!key) return;
@@ -517,16 +527,31 @@ function loadCustomerPartData_(sheet, splitSet, parentCtx) {
   if (!sufKey || h["Job"] === undefined || h["Percent Complete"] === undefined) return map;
   
   sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues().forEach(r => {
-    const pctVal = r[h["Percent Complete"]];
+    // FIX: SyteLine populates Percent Complete for standard materials too.
+    // We must strictly filter for rows where the Item or Description indicates it is a CSP.
+    const item = normalizeString_(r[h["Item"]]);
+    const desc = normalizeString_(r[h["Material Description"]]);
+    const isCSP = item.toUpperCase().includes("CSP") || desc.toUpperCase().includes("CSP");
     
-    // Skip regular material rows that don't have CSP percentage data
-    if (pctVal === "" || pctVal === undefined) return;
+    if (!isCSP) return;
+
+    const pctVal = r[h["Percent Complete"]];
+    if (pctVal === "" || pctVal === undefined || pctVal === null) return;
     
     const key = normalizeJobKey_(getCompositeJobKey_(normalizeJobKey_(r[h["Job"]]), r[h[sufKey]], splitSet.has(normalizeJobKey_(r[h["Job"]]))));
     if (!key) return;
     
     const pct = parseNumber_(pctVal || 0);
-    map.set(key, pct === 100 ? "CSP received" : (pct > 0 ? "CSP partially received" : "CSP not received"));
+    const newStatus = pct === 100 ? "CSP received" : (pct > 0 ? "CSP partially received" : "CSP not received");
+    
+    // Safely handle multiple CSP items on a single job. 
+    // Prioritize the "worst-case" status so the job doesn't falsely show as cleared.
+    const currentStatus = map.get(key);
+    if (!currentStatus || currentStatus === "CSP received") {
+       map.set(key, newStatus); 
+    } else if (currentStatus === "CSP partially received" && newStatus === "CSP not received") {
+       map.set(key, newStatus);
+    }
   });
   return map;
 }
