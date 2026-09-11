@@ -3,6 +3,7 @@
  * - No CONFIG declaration here.
  * - Single shared header cache in this file ONLY.
  */
+
 var __HEADERS_CACHE = {}; // global project scope cache (declare once)
 
 //==============================================================
@@ -78,10 +79,8 @@ function normalizeNotes_(s) {
 function parseDate_(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "string" && v.trim() === "") return null;
-  
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   if (typeof v === "number") return new Date(Math.round((v - 25569) * 864e5));
-  
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -104,16 +103,12 @@ function normalizeJobKeyForCompare_(key) {
 
 function parseNotesParts_(noteStr) {
   const note = normalizeString_(noteStr);
-
   const endMatch = note.match(/End Date=([^;]+)/i);
   const endDate = endMatch ? normalizeString_(endMatch[1]) : "";
-
   const pMatches = note.match(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*/gi) || [];
   const pFull = pMatches.map(s => s.trim()).join("; ");
-
   const cspMatch = note.match(/CSP[^;]*/i);
   const csp = cspMatch ? normalizeString_(cspMatch[0]) : "";
-
   const custom = note
     .replace(/End Date=[^;]+;?/gi, "")
     .replace(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*;?/gi, "") 
@@ -122,7 +117,6 @@ function parseNotesParts_(noteStr) {
     .map(s => s.trim())
     .filter(Boolean)
     .join("; ");
-
   return { endDate, pFull, csp, custom };
 }
 
@@ -132,17 +126,14 @@ function parseNotesParts_(noteStr) {
 function getHeaders_(sheet) {
   const key = sheet.getSheetId() + ":" + sheet.getLastColumn();
   if (__HEADERS_CACHE[key]) return __HEADERS_CACHE[key];
-
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const map = {};
-
   headers.forEach((cell, i) => {
     const clean = normalizeString_(cell);
     if (!clean) return;
     if (map[clean] === undefined) map[clean] = i;
     if (clean.toLowerCase() === "item" && map["Item No."] === undefined) map["Item No."] = i;
   });
-
   __HEADERS_CACHE[key] = map;
   return map;
 }
@@ -177,17 +168,14 @@ function logToolAction_(action, details, sheetName, targetSheetName, severity, r
 function applyColumnUpdates_(sheet, col1Based, rowToValueMap) {
   const rows = Array.from(rowToValueMap.keys()).sort((a, b) => a - b);
   if (rows.length === 0) return 0;
-
   let start = rows[0];
   let prev = rows[0];
-
   const flush = (s, e) => {
     const num = e - s + 1;
     const values = [];
     for (let r = s; r <= e; r++) values.push([rowToValueMap.get(r)]);
     sheet.getRange(s, col1Based, num, 1).setValues(values);
   };
-
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (r === prev + 1) { prev = r; continue; }
@@ -195,7 +183,6 @@ function applyColumnUpdates_(sheet, col1Based, rowToValueMap) {
     start = prev = r;
   }
   flush(start, prev);
-
   return rows.length;
 }
 
@@ -205,7 +192,6 @@ function applyColumnUpdates_(sheet, col1Based, rowToValueMap) {
 function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, runId, summary, parentCtx) {
   const h = getHeaders_(sheet);
   const logs = [];
-
   const missing = [];
   if (h["Job Order"] === undefined) missing.push("Job Order");
   if (h["MTL Due Date"] === undefined) missing.push("MTL Due Date");
@@ -235,8 +221,8 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
   for (let i = 0; i < disp.length; i++) {
     const rowNum = i + 2;
     const jobKey = normalizeJobKey_(disp[i][h["Job Order"]]);
-
     let dataKey = sourceData.jobsInSource.has(jobKey) ? jobKey : null;
+
     if (!dataKey && jobKey.includes(" 0000")) {
       const base = jobKey.replace(" 0000", "");
       if (sourceData.jobsInSource.has(base)) dataKey = base;
@@ -266,6 +252,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     const srcAssignedTo = normalizeString_(sourceData.assignedToMap.get(dataKey) || "");
 
     const endStr = srcEnd ? `End Date=${Utilities.formatDate(srcEnd, Session.getScriptTimeZone(), "M/dd/yy")}` : "";
+
     const shortageList = shortageData.get(dataKey) || [];
     shortageList.sort((a, b) => (parseDate_(a.date) ? parseDate_(a.date).getTime() : Infinity) - (parseDate_(b.date) ? parseDate_(b.date).getTime() : Infinity));
 
@@ -276,6 +263,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
     }).join("; ");
 
     const cspStr = cspData.get(dataKey) || "";
+
     const cleanCustom = oldNote.replace(/End Date=[^;]+/gi, "").replace(/P-(?:\d{1,2}\/\d{1,2}|TBD)[^;]*/gi, "").replace(/CSP[^;]*/gi, "").split(";").map(s => s.trim()).filter(Boolean);
     const newNote = [endStr, pStr, cspStr, ...cleanCustom].filter(Boolean).join("; ");
     
@@ -300,22 +288,26 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
 
     if (dueChanged || notesChanged || pcChanged) {
       const rowChangelogs = [];
+
       if (dueChanged) {
-        rowChangelogs.push(`* Due date: ${oldDue ? Utilities.formatDate(oldDue, Session.getScriptTimeZone(), "M/dd") : "Blank"} → ${srcDue ? Utilities.formatDate(srcDue, Session.getScriptTimeZone(), "M/dd") : "Cleared"}`);
+        rowChangelogs.push(`* Due date: ${oldDue ? Utilities.formatDate(oldDue, Session.getScriptTimeZone(), "M/dd") : "Blank"}   ${srcDue ? Utilities.formatDate(srcDue, Session.getScriptTimeZone(), "M/dd") : "Cleared"}`);
       }
+
       if (pcChanged) {
-        rowChangelogs.push(`* PC: ${oldPc || "Blank"} → ${srcAssignedTo || "Cleared"}`);
+        rowChangelogs.push(`* PC: ${oldPc || "Blank"}   ${srcAssignedTo || "Cleared"}`);
       }
+
       if (notesChanged) {
         const oldParts = parseNotesParts_(oldNote);
         const newParts = parseNotesParts_(newNote);
         
         if (oldParts.endDate !== newParts.endDate) {
-          rowChangelogs.push(`* End Date: ${oldParts.endDate ? oldParts.endDate.replace(/\/\d{2,4}$/, '') : "Blank"} → ${newParts.endDate ? newParts.endDate.replace(/\/\d{2,4}$/, '') : "Cleared"}`);
+          rowChangelogs.push(`* End Date: ${oldParts.endDate ? oldParts.endDate.replace(/\/\d{2,4}$/, '') : "Blank"}   ${newParts.endDate ? newParts.endDate.replace(/\/\d{2,4}$/, '') : "Cleared"}`);
         }
         
         const oldPArr = oldParts.pFull ? oldParts.pFull.split(';').map(s => s.trim()).filter(Boolean) : [];
         const newPArr = newParts.pFull ? newParts.pFull.split(';').map(s => s.trim()).filter(Boolean) : [];
+
         const added = newPArr.filter(x => !oldPArr.includes(x));
         const removed = oldPArr.filter(x => !newPArr.includes(x));
         
@@ -331,7 +323,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
             if (remMap.has(getBase(a))) {
               const o = getD(remMap.get(getBase(a))).replace('P-', '');
               const n = getD(a).replace('P-', '');
-              if (o) rowChangelogs.push(`* Shifted: ${getBase(a)} (P-${o}→P-${n})`);
+              if (o) rowChangelogs.push(`* Shifted: ${getBase(a)} (P-${o} P-${n})`);
               else rowChangelogs.push(`* New Short: ${a}`);
             } else {
               rowChangelogs.push(`* New Short: ${a}`);
@@ -352,8 +344,13 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
 
       if (rowChangelogs.length > 0 && typeof buildCleanPCNotes_ === 'function') {
         const currentPCNotes = normalizeString_(disp[i][pcNotesCol - 1]);
-        pcNotesUpdates.set(rowNum, buildCleanPCNotes_(currentPCNotes, rowChangelogs));
+        // Split current cell text into lines to satisfy buildCleanPCNotes_ array contract
+        const rawLines = currentPCNotes ? currentPCNotes.split(/\r?\n/) : [];
+        // Extract existing automated entries beginning with '*'
+        const autoLines = rawLines.filter(line => line.trim().startsWith('*'));
+        pcNotesUpdates.set(rowNum, buildCleanPCNotes_(rawLines, autoLines, rowChangelogs));
       }
+
       logs.push({ jobOrder: jobKey });
     }
   }
@@ -379,14 +376,12 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
 function loadSourceJobData_(sheet, splitSet, parentCtx) {
   const h = getHeaders_(sheet);
   const data = sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues();
-
   const sufKey = getSuffixKey_(h) || "Job Suffix";
   const itemCol = colAny_(h, ["Item", "Item No.", "Item No", "Item Number"]);
   const custCol = colAny_(h, ["Customer", "Customer Name", "Cust Num", "Cust", "CustomerNum"]);
   const statusCol = colAny_(h, ["Status", "Job Status", "Stat"]);
   const custPoCol = colAny_(h, ["Cust PO", "Customer PO", "Customer PO#", "CustomerPO", "CustPO"]);
   const assignedToCol = colAny_(h, ["Assigned To", "AssignedTo", "Assigned"]);
-
   const map = { jobsInSource: new Set(), dateMap: new Map(), endMap: new Map(), itemMap: new Map(), customerMap: new Map(), statusMap: new Map(), custPoMap: new Map(), assignedToMap: new Map() };
 
   data.forEach(r => {
@@ -401,6 +396,7 @@ function loadSourceJobData_(sheet, splitSet, parentCtx) {
     map.custPoMap.set(key, (custPoCol !== undefined) ? r[custPoCol] : "");
     map.assignedToMap.set(key, (assignedToCol !== undefined) ? r[assignedToCol] : "");
   });
+
   return map;
 }
 
@@ -456,11 +452,11 @@ function loadCustomerPOMap_(sheet, splitSet, parentCtx) {
 function loadJobMaterialDemands_(sheet, splitSet, pClassMap, producedSet, custPoMap, parentCtx) {
   const h = getHeaders_(sheet);
   const demands = [];
-
   const sufKey = getSuffixKey_(h);
   if (!sufKey || h["Job"] === undefined) return demands;
 
   const values = sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues();
+
   values.forEach(row => {
     // FIX: Ignore lines with no actual material shortage
     const qtyShort = parseNumber_(row[h["Qty Short"]] || 0);
@@ -534,10 +530,10 @@ function loadCustomerPartData_(sheet, splitSet, parentCtx) {
   const h = getHeaders_(sheet);
   const map = new Map();
   const sufKey = getSuffixKey_(h);
-  
+
   // Safety check: Make sure Percent Complete exists in the merged sheet
   if (!sufKey || h["Job"] === undefined || h["Percent Complete"] === undefined) return map;
-  
+
   sheet.getRange(2, 1, Math.max(1, sheet.getLastRow() - 1), sheet.getLastColumn()).getValues().forEach(r => {
     // FIX: SyteLine populates Percent Complete for standard materials too.
     // We must strictly filter for rows where the Item or Description indicates it is a CSP.
@@ -552,13 +548,13 @@ function loadCustomerPartData_(sheet, splitSet, parentCtx) {
 
     const pctVal = r[h["Percent Complete"]];
     if (pctVal === "" || pctVal === undefined || pctVal === null) return;
-    
+
     const key = normalizeJobKey_(getCompositeJobKey_(normalizeJobKey_(r[h["Job"]]), r[h[sufKey]], splitSet.has(normalizeJobKey_(r[h["Job"]]))));
     if (!key) return;
-    
+
     const pct = parseNumber_(pctVal || 0);
     const newStatus = pct === 100 ? "CSP received" : (pct > 0 ? "CSP partially received" : "CSP not received");
-    
+
     // Safely handle multiple CSP items on a single job. 
     // Prioritize the "worst-case" status so the job doesn't falsely show as cleared.
     const currentStatus = map.get(key);
@@ -568,6 +564,7 @@ function loadCustomerPartData_(sheet, splitSet, parentCtx) {
        map.set(key, newStatus);
     }
   });
+
   return map;
 }
 
@@ -577,37 +574,37 @@ function allocateMaterials_(demandsList, suppliesMap, parentCtx) {
     if (!demandsByItem.has(d.item)) demandsByItem.set(d.item, []);
     demandsByItem.get(d.item).push(d);
   });
+
   const results = [];
-  
   const getTime = (d) => { const date = parseDate_(d); return date ? date.getTime() : Infinity; };
-  
+
   for (const [item, demands] of demandsByItem.entries()) {
     const suppliesRaw = suppliesMap.get(item) || [];
     const supplies = suppliesRaw.map(s => ({ po: s.po, dueDate: (s.dueDate instanceof Date) ? new Date(s.dueDate.getTime()) : (parseDate_(s.dueDate) || ""), qtyOrdered: parseNumber_(s.qtyOrdered || 0) }));
-    
+
     demands.sort((a, b) => getTime(a.jobEndDate) - getTime(b.jobEndDate));
     supplies.sort((a, b) => getTime(a.dueDate) - getTime(b.dueDate));
-    
+
     let sIdx = 0;
     for (const d of demands) {
       let needed = parseNumber_(d.qtyShort || 0);
       const usedPos = [];
-      
+
       while (needed > 0 && sIdx < supplies.length) {
         const currentPo = supplies[sIdx];
         const take = Math.min(needed, currentPo.qtyOrdered);
-        
+
         if (take > 0) {
           usedPos.push({ po: currentPo.po, dueDate: currentPo.dueDate, qtyRemaining: currentPo.qtyOrdered - take });
         }
-        
+
         needed -= take;
         currentPo.qtyOrdered -= take;
         if (currentPo.qtyOrdered <= 0.001) sIdx++;
       }
-      
+
       let poStr = "-", poDueDate = "", poQtyRem = "-";
-      
+
       if (usedPos.length > 0) {
         poStr = usedPos.map(u => u.po).join(", ");
         poDueDate = usedPos[0].dueDate; 
@@ -624,12 +621,12 @@ function allocateMaterials_(demandsList, suppliesMap, parentCtx) {
       });
     }
   }
+
   return results;
 }
 
 function writeShortageList_(ss, results, parentCtx) {
   let sheet = ss.getSheetByName("Shortage List") || ss.insertSheet("Shortage List");
-
   const headers = [
     "Assigned To", "Job Order", "Product Class", "Cust PO", "Job Due Date",
     "Item", "Material Description", "U/M", "Qty Short",
@@ -639,6 +636,7 @@ function writeShortageList_(ss, results, parentCtx) {
   if (sheet.getLastRow() > 1) {
     sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(sheet.getLastColumn(), headers.length)).clearContent();
   }
+
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   sheet.setFrozenRows(1);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
@@ -667,7 +665,6 @@ function writeShortageList_(ss, results, parentCtx) {
     ]);
 
     sheet.getRange(2, 1, out.length, headers.length).setValues(out);
-
     sheet.getRange(2, 5, out.length, 1).setNumberFormat("M/dd/yyyy"); // Job Due Date
     sheet.getRange(2, 11, out.length, 1).setNumberFormat("M/dd/yyyy"); // PO Due Date
 
@@ -693,16 +690,18 @@ function parseAndWriteCsvToSheet_(sheet, content, parentCtx) {
     while (end > 0 && normalizeString_(r[end - 1]) === "") end--;
     return r.slice(0, end);
   });
+
   const maxLen = Math.max(...trimmed.map(r => r.length), 0);
   data = trimmed.map(r => r.concat(Array(Math.max(0, maxLen - r.length)).fill("")));
-
   sheet.clearContents();
+
   if (data.length > 0) {
     const textColumns = ["item", "item no.", "item no", "item number", "job", "job order", "po", "cust po"];
     data[0].map(c => normalizeString_(c).toLowerCase()).forEach((colName, idx) => {
       if (textColumns.includes(colName)) sheet.getRange(2, idx + 1, Math.max(1, data.length - 1), 1).setNumberFormat("@");
     });
   }
+
   sheet.getRange(1, 1, data.length, maxLen).setValues(data);
 }
 
@@ -737,11 +736,14 @@ function processMoveOperation_(src, tar, rows, desc) {
   const maxSrcRows = src.getMaxRows();
   const validRows = [...new Set(rows.map(Number).filter(r => !isNaN(r) && r > 0 && r <= maxSrcRows))].sort((a, b) => a - b);
   if (!validRows.length) return;
+
   let nextRow = tar.getLastRow() + 1;
   const lastCol = src.getLastColumn();
   if (lastCol === 0) return;
+
   const requiredTarRows = nextRow + validRows.length - 1;
   if (requiredTarRows > tar.getMaxRows()) tar.insertRowsAfter(tar.getMaxRows(), requiredTarRows - tar.getMaxRows());
+
   const ranges = [];
   let start = validRows[0], prev = validRows[0];
   for (let i = 1; i < validRows.length; i++) {
@@ -749,11 +751,13 @@ function processMoveOperation_(src, tar, rows, desc) {
     ranges.push([start, prev]); start = prev = validRows[i];
   }
   ranges.push([start, prev]);
+
   ranges.forEach(([s, e]) => {
     const numRows = e - s + 1;
     src.getRange(s, 1, numRows, lastCol).copyTo(tar.getRange(nextRow, 1), { contentsOnly: false });
     nextRow += numRows;
   });
+
   batchDeleteRows_(src, validRows);
 }
 
@@ -762,6 +766,7 @@ function batchDeleteRows_(sheet, rows) {
   const maxRows = sheet.getMaxRows();
   const sorted = [...new Set(rows.map(Number).filter(r => !isNaN(r) && r > 0 && r <= maxRows))].sort((a, b) => a - b);
   if (!sorted.length) return;
+
   const ranges = [];
   let start = sorted[0], prev = sorted[0];
   for (let i = 1; i < sorted.length; i++) {
@@ -769,6 +774,7 @@ function batchDeleteRows_(sheet, rows) {
     ranges.push([start, prev]); start = prev = sorted[i];
   }
   ranges.push([start, prev]);
+
   for (let i = ranges.length - 1; i >= 0; i--) {
     const [s, e] = ranges[i];
     const numRows = e - s + 1, currentMax = sheet.getMaxRows();
@@ -784,7 +790,6 @@ function batchDeleteRows_(sheet, rows) {
 //==============================================================
 function auditSyteLineJobsNotTracked_(ss, sourceData, reportSheetNames, runId, parentCtx) {
   const ctx = childCtx_(parentCtx || createLogCtx_(runId, "auditSyteLineJobsNotTracked_", { spreadsheet: ss.getName() }), "auditSyteLineJobsNotTracked_");
-
   const tracked = new Set();
   const makeFuzzy = (k) => String(k).toUpperCase().replace(/[\s\-]/g, "");
 
@@ -805,7 +810,7 @@ function auditSyteLineJobsNotTracked_(ss, sourceData, reportSheetNames, runId, p
       if (k) {
         const norm = normalizeJobKeyForCompare_(k).toUpperCase();
         tracked.add(norm); 
-        tracked.add(makeFuzzy(norm)); 
+        tracked.add(makeFuzzy(norm));
         
         const base = norm.split(/[\s\-]/)[0];
         if (base) tracked.add(base); 
@@ -815,7 +820,6 @@ function auditSyteLineJobsNotTracked_(ss, sourceData, reportSheetNames, runId, p
 
   const all = Array.from(sourceData.jobsInSource.values());
   const missing = [];
-  
   for (let i = 0; i < all.length; i++) {
     const key = normalizeJobKey_(all[i]);
     const norm = normalizeJobKeyForCompare_(key).toUpperCase();
