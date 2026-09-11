@@ -7,18 +7,43 @@
 /**
  * Builds the final PC Notes cell content by merging manual notes with the
  * deduplicated and sorted automated changelog history.
+ * 
+ * Supports polymorphic inputs: handles raw string cell values, arrays,
+ * or flexible 2-argument calls without losing manual user notes.
  *
- * @param {string[]} rawLines - The original lines from the current PC Notes cell.
- * @param {string[]} autoLines - The existing automated history lines (starting with '*').
- * @param {string[]} cleanNewEntries - The newly generated Syteline update lines.
+ * @param {string[]|string} rawLines - The original lines or raw string from the current PC Notes cell.
+ * @param {string[]|string} [autoLines] - Existing automated history lines (starting with '*'), or new entries if called with 2 args.
+ * @param {string[]|string} [cleanNewEntries] - The newly generated Syteline update lines.
  * @returns {string} The final merged string to write back to the sheet.
  */
 function buildCleanPCNotes_(rawLines, autoLines, cleanNewEntries) {
-  
-  // 0. Fail-safes: Ensure all inputs are iterable arrays to prevent runtime errors
-  rawLines = Array.isArray(rawLines) ? rawLines : [];
-  autoLines = Array.isArray(autoLines) ? autoLines : [];
-  cleanNewEntries = Array.isArray(cleanNewEntries) ? cleanNewEntries : [];
+  // 0. Fail-safes & Polymorphic Argument Normalization
+  // Safely coerce rawLines into an array whether passed as string, array, or null/undefined
+  if (typeof rawLines === "string") {
+    rawLines = rawLines ? rawLines.split(/\r?\n/) : [];
+  } else if (!Array.isArray(rawLines)) {
+    rawLines = [];
+  }
+
+  // Handle 2-argument invocation: buildCleanPCNotes_(rawInput, newEntries)
+  if (cleanNewEntries === undefined && Array.isArray(autoLines)) {
+    cleanNewEntries = autoLines;
+    autoLines = rawLines.filter(line => line.trim().startsWith('*'));
+  } else {
+    // Normalize autoLines
+    if (typeof autoLines === "string") {
+      autoLines = autoLines ? autoLines.split(/\r?\n/) : [];
+    } else if (!Array.isArray(autoLines)) {
+      autoLines = [];
+    }
+    
+    // Normalize cleanNewEntries
+    if (typeof cleanNewEntries === "string") {
+      cleanNewEntries = cleanNewEntries ? cleanNewEntries.split(/\r?\n/) : [];
+    } else if (!Array.isArray(cleanNewEntries)) {
+      cleanNewEntries = [];
+    }
+  }
 
   // 1. Combine old history and new entries
   const allLinesRaw = [...autoLines, ...cleanNewEntries];
@@ -59,7 +84,7 @@ function buildCleanPCNotes_(rawLines, autoLines, cleanNewEntries) {
       const match = line.match(/\(([^)]+)\)/); 
       if (match) extractedRaw = match[1];
     } 
-    // Format B: "* Shifted: 1011-349-1205 (P-TBD→P-6/26)" or "* Arrived: AW12S"
+    // Format B: "* Shifted: 1011-349-1205 (P-TBD P-6/26)" or "* Arrived: AW12S"
     else if (line.match(/^\*\s*(?:Shifted|Arrived|Picked Short):/i)) {
       let content = line.replace(/^\*\s*(?:Shifted|Arrived|Picked Short):\s*/i, "");
       const match = content.match(/^([^(]+)/); 
@@ -68,7 +93,7 @@ function buildCleanPCNotes_(rawLines, autoLines, cleanNewEntries) {
     
     return extractedRaw ? extractedRaw.trim() : null;
   };
-  
+
   // 4. Self-Healing Retroactive Deduplication (Process from Newest to Oldest)
   const seenItems = new Set();
   const seenMetrics = new Set();
@@ -141,17 +166,16 @@ function buildCleanPCNotes_(rawLines, autoLines, cleanNewEntries) {
     return getWeight(a) - getWeight(b);
   });
 
-  let combinedChangelog = healedLines;
+  const combinedChangelog = healedLines;
 
   // 6. Final Assembly: Separate manual notes from automated history
   const manualNotes = rawLines.filter(line => !line.trim().startsWith('*'));
-
+  
   // Clean up infinite spaces and prevent duplicate blank lines from stacking
   const cleanManual = manualNotes.join('\n').trim();
   const cleanHistory = combinedChangelog.join('\n').trim();
 
   let finalNote = "";
-  
   if (cleanManual.length > 0 && cleanHistory.length > 0) {
     // 1 newline at top, manual notes, 1 blank line gap, then history
     finalNote = "\n" + cleanManual + "\n\n" + cleanHistory;
