@@ -290,11 +290,11 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
       const rowChangelogs = [];
 
       if (dueChanged) {
-        rowChangelogs.push(`* Due date: ${oldDue ? Utilities.formatDate(oldDue, Session.getScriptTimeZone(), "M/dd") : "Blank"}   ${srcDue ? Utilities.formatDate(srcDue, Session.getScriptTimeZone(), "M/dd") : "Cleared"}`);
+        rowChangelogs.push(`* Due date: ${oldDue ? Utilities.formatDate(oldDue, Session.getScriptTimeZone(), "M/dd") : "Blank"} -> ${srcDue ? Utilities.formatDate(srcDue, Session.getScriptTimeZone(), "M/dd") : "Cleared"}`);
       }
 
       if (pcChanged) {
-        rowChangelogs.push(`* PC: ${oldPc || "Blank"}   ${srcAssignedTo || "Cleared"}`);
+        rowChangelogs.push(`* PC: ${oldPc || "Blank"} -> ${srcAssignedTo || "Cleared"}`);
       }
 
       if (notesChanged) {
@@ -302,7 +302,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
         const newParts = parseNotesParts_(newNote);
         
         if (oldParts.endDate !== newParts.endDate) {
-          rowChangelogs.push(`* End Date: ${oldParts.endDate ? oldParts.endDate.replace(/\/\d{2,4}$/, '') : "Blank"}   ${newParts.endDate ? newParts.endDate.replace(/\/\d{2,4}$/, '') : "Cleared"}`);
+          rowChangelogs.push(`* End Date: ${oldParts.endDate ? oldParts.endDate.replace(/\/\d{2,4}$/, '') : "Blank"} -> ${newParts.endDate ? newParts.endDate.replace(/\/\d{2,4}$/, '') : "Cleared"}`);
         }
         
         const oldPArr = oldParts.pFull ? oldParts.pFull.split(';').map(s => s.trim()).filter(Boolean) : [];
@@ -323,7 +323,7 @@ function processSingleReportSheet_(sheet, sourceData, shortageData, cspData, run
             if (remMap.has(getBase(a))) {
               const o = getD(remMap.get(getBase(a))).replace('P-', '');
               const n = getD(a).replace('P-', '');
-              if (o) rowChangelogs.push(`* Shifted: ${getBase(a)} (P-${o} P-${n})`);
+              if (o) rowChangelogs.push(`* Shifted: ${getBase(a)} (P-${o} -> P-${n})`);
               else rowChangelogs.push(`* New Short: ${a}`);
             } else {
               rowChangelogs.push(`* New Short: ${a}`);
