@@ -40,7 +40,7 @@ function onOpen() {
     .createMenu("Update Tools")
     .addItem("Step 1: Import & Update", "showImportDialog")
     .addSeparator()
-    .addItem("Step 2: Cleanup (Move & Archive)", "showCleanupDialog")
+    .addItem("Step 2: Move & Archive", "showCleanupDialog")
     .addToUi();
 }
 
