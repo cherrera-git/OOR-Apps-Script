@@ -1,15 +1,15 @@
 {
-  "timeZone": "America/Vancouver",
-  "dependencies": {
-  },
-  "webapp": {
-    "access": "ANYONE",
-    "executeAs": "USER_ACCESSING"
-  },
-  "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8",
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/script.container.ui"
-  ]
+"timeZone": "America/Vancouver",
+"dependencies": {},
+"webapp": {
+"access": "ANYONE",
+"executeAs": "USER_ACCESSING"
+},
+"exceptionLogging": "STACKDRIVER",
+"runtimeVersion": "V8",
+"oauthScopes": [
+"https://www.googleapis.com/auth/spreadsheets",
+"https://www.googleapis.com/auth/script.container.ui",
+"https://www.googleapis.com/auth/gmail.send"
+]
 }
